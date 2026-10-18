@@ -980,6 +980,10 @@ function App() {
     }
 
     setGameError(null);
+    // The rematch emits the new public/private snapshots before its
+    // acknowledgement. Clear the old private snapshot before sending so the
+    // authoritative private event cannot be overwritten by the ack handler.
+    setPrivateGameState(null);
     setPendingAction("rematch");
     maskedSocket.emit("rematch", {}, (response) => {
       setPendingAction((currentAction) =>
@@ -992,7 +996,6 @@ function App() {
       }
 
       setGameState(response.data);
-      setPrivateGameState(null);
       setChatMessages([]);
       setGameFormError(null);
       previousGameSnapshot.current = null;
