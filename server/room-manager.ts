@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
+import type { GameParticipant } from "../shared/game-protocol.js";
 import {
   NICKNAME_MAX_LENGTH,
   NICKNAME_MIN_LENGTH,
@@ -45,6 +46,7 @@ export type ValidationResult<T> =
 
 export interface RoomManagerSuccess<T> extends AckSuccess<T> {
   roomCode?: string;
+  playerId?: string;
   state?: PublicRoomState;
 }
 
@@ -54,7 +56,14 @@ export type RoomManagerResult<T> =
 
 export interface RoomStateChange {
   roomCode: string;
+  playerId?: string;
   state?: PublicRoomState;
+}
+
+export interface AuthenticatedPlayer {
+  playerId: string;
+  roomCode: string;
+  socketId: string;
 }
 
 export interface RoomManagerOptions {
@@ -69,7 +78,7 @@ function error(code: LobbyError["code"], message: string): LobbyError {
 
 function success<T>(
   data: T,
-  metadata: Pick<RoomManagerSuccess<T>, "roomCode" | "state"> = {},
+  metadata: Pick<RoomManagerSuccess<T>, "roomCode" | "playerId" | "state"> = {},
 ): RoomManagerSuccess<T> {
   return { ok: true, data, ...metadata };
 }
@@ -481,7 +490,7 @@ export class RoomManager {
 
     return success(
       { left: true },
-      { roomCode: room.roomCode, state },
+      { roomCode: room.roomCode, playerId: player.id, state },
     );
   }
 
@@ -510,8 +519,185 @@ export class RoomManager {
 
     return {
       roomCode: room.roomCode,
+      playerId: player.id,
       state: this.toPublicRoomState(room),
     };
+  }
+
+  /**
+   * Resolve the identity associated with a currently authenticated socket.
+   * The returned socket id is included so callers can pass the identity
+   * through to another server-side subsystem without consulting socket.data.
+   */
+  public getAuthenticatedPlayer(
+    socketId: string,
+  ): AuthenticatedPlayer | undefined {
+    const player = this.playerBySocket.get(socketId);
+    if (player === undefined || !player.connected || player.socketId !== socketId) {
+      return undefined;
+    }
+
+    const room = this.findRoomForPlayer(player);
+    return room === undefined
+      ? undefined
+      : { playerId: player.id, roomCode: room.roomCode, socketId };
+  }
+
+  public getPlayerForSocket(socketId: string): AuthenticatedPlayer | undefined {
+    return this.getAuthenticatedPlayer(socketId);
+  }
+
+  public getPlayerIdForSocket(socketId: string): string | undefined {
+    return this.getAuthenticatedPlayer(socketId)?.playerId;
+  }
+
+  public getPlayerId(socketId: string): string | undefined {
+    return this.getPlayerIdForSocket(socketId);
+  }
+
+  public getSocketIdForPlayer(
+    roomCodeValue: unknown,
+    playerId: string,
+  ): string | undefined {
+    if (typeof playerId !== "string" || playerId.length === 0) {
+      return undefined;
+    }
+
+    const roomCodeResult = normalizeRoomCode(roomCodeValue);
+    if (!roomCodeResult.ok) {
+      return undefined;
+    }
+
+    const room = this.rooms.get(roomCodeResult.value);
+    const player = room?.players.get(playerId);
+    return player?.connected && player.socketId !== undefined
+      ? player.socketId
+      : undefined;
+  }
+
+  public getSocketIdForPlayerId(
+    roomCodeValue: unknown,
+    playerId: string,
+  ): string | undefined {
+    return this.getSocketIdForPlayer(roomCodeValue, playerId);
+  }
+
+  public getSocketId(
+    playerIdOrRoomCode: string,
+    roomCodeOrPlayerId?: unknown,
+  ): string | undefined {
+    if (
+      typeof roomCodeOrPlayerId === "string" &&
+      normalizeRoomCode(playerIdOrRoomCode).ok
+    ) {
+      return this.getSocketIdForPlayer(
+        playerIdOrRoomCode,
+        roomCodeOrPlayerId,
+      );
+    }
+
+    if (typeof playerIdOrRoomCode !== "string" || playerIdOrRoomCode.length === 0) {
+      return undefined;
+    }
+
+    if (roomCodeOrPlayerId !== undefined) {
+      return this.getSocketIdForPlayer(roomCodeOrPlayerId, playerIdOrRoomCode);
+    }
+
+    for (const player of this.playerBySocket.values()) {
+      if (
+        player.id === playerIdOrRoomCode &&
+        player.connected &&
+        player.socketId !== undefined
+      ) {
+        return player.socketId;
+      }
+    }
+
+    return undefined;
+  }
+
+  public isHost(socketId: string, roomCodeValue?: unknown): boolean {
+    const authenticatedPlayer = this.getAuthenticatedPlayer(socketId);
+    if (authenticatedPlayer === undefined) {
+      return false;
+    }
+
+    if (roomCodeValue !== undefined) {
+      const roomCodeResult = normalizeRoomCode(roomCodeValue);
+      if (!roomCodeResult.ok || roomCodeResult.value !== authenticatedPlayer.roomCode) {
+        return false;
+      }
+    }
+
+    const room = this.rooms.get(authenticatedPlayer.roomCode);
+    return room?.hostPlayerId === authenticatedPlayer.playerId;
+  }
+
+  public getConnectedGameParticipants(
+    roomCodeValue: unknown,
+  ): GameParticipant[] {
+    const roomCodeResult = normalizeRoomCode(roomCodeValue);
+    if (!roomCodeResult.ok) {
+      return [];
+    }
+
+    const room = this.rooms.get(roomCodeResult.value);
+    if (room === undefined) {
+      return [];
+    }
+
+    return [...room.players.values()]
+      .filter((player) => player.connected)
+      .map((player) => ({ id: player.id, nickname: player.nickname }));
+  }
+
+  public getConnectedPlayers(roomCodeValue: unknown): GameParticipant[] {
+    return this.getConnectedGameParticipants(roomCodeValue);
+  }
+
+  public getConnectedParticipants(roomCodeValue: unknown): GameParticipant[] {
+    return this.getConnectedGameParticipants(roomCodeValue);
+  }
+
+  public resetRoomToLobby(
+    roomCodeValue: unknown,
+  ): RoomManagerResult<PublicRoomState> {
+    const roomCodeResult = normalizeRoomCode(roomCodeValue);
+    if (!roomCodeResult.ok) {
+      return failure(roomCodeResult.error);
+    }
+
+    const room = this.rooms.get(roomCodeResult.value);
+    if (room === undefined) {
+      return failure(error("ROOM_NOT_FOUND", "That room does not exist."));
+    }
+
+    if (room.phase === "lobby") {
+      const state = this.toPublicRoomState(room);
+      return success(state, { roomCode: room.roomCode, state });
+    }
+
+    room.phase = "lobby";
+    for (const player of room.players.values()) {
+      player.ready = false;
+    }
+    this.ensureHost(room);
+
+    const state = this.toPublicRoomState(room);
+    return success(state, { roomCode: room.roomCode, state });
+  }
+
+  public resetToLobby(
+    roomCodeValue: unknown,
+  ): RoomManagerResult<PublicRoomState> {
+    return this.resetRoomToLobby(roomCodeValue);
+  }
+
+  public resetPlayingRoom(
+    roomCodeValue: unknown,
+  ): RoomManagerResult<PublicRoomState> {
+    return this.resetRoomToLobby(roomCodeValue);
   }
 
   public getRoomState(roomCodeValue: unknown): PublicRoomState | undefined {

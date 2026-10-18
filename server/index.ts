@@ -14,6 +14,7 @@ import {
   registerSocketHandlers,
   type LobbyServer,
 } from "./socket-handlers.js";
+import { GameEngineRegistry } from "./game-engine.js";
 
 export const DEFAULT_PORT = 3001;
 
@@ -84,10 +85,12 @@ export interface ServerBundle {
   httpServer: NodeHttpServer;
   io: LobbyServer;
   roomManager: RoomManager;
+  gameEngineRegistry: GameEngineRegistry;
 }
 
 export function createServerBundle(
   roomManager: RoomManager = new RoomManager(),
+  gameEngineRegistry: GameEngineRegistry = new GameEngineRegistry(),
 ): ServerBundle {
   const app = express();
 
@@ -110,9 +113,9 @@ export function createServerBundle(
     },
   });
 
-  registerSocketHandlers(io, roomManager);
+  registerSocketHandlers(io, roomManager, gameEngineRegistry);
 
-  return { app, httpServer, io, roomManager };
+  return { app, httpServer, io, roomManager, gameEngineRegistry };
 }
 
 export function getPort(): number {
