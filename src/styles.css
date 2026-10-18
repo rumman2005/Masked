@@ -511,6 +511,45 @@ h3 {
   white-space: nowrap;
 }
 
+.game-status-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: -18px 0 34px;
+  overflow: hidden;
+  border: 1px solid rgba(107, 76, 230, 0.18);
+  border-radius: 16px;
+  background: rgba(107, 76, 230, 0.16);
+}
+
+.game-status-item {
+  min-height: 76px;
+  padding: 14px 18px;
+  background: #fbfaff;
+}
+
+.game-status-item strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--purple);
+  font-size: 1rem;
+  text-transform: capitalize;
+}
+
+.game-status-time strong {
+  color: #c46b2f;
+}
+
+.private-role-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 11px 18px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .section-heading-row {
   display: flex;
   align-items: flex-end;
@@ -778,6 +817,10 @@ h3 {
   }
 
   .room-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .game-status-panel {
     grid-template-columns: 1fr;
   }
 

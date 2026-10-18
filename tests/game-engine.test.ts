@@ -114,6 +114,25 @@ describe("GameEngine", () => {
     engine.dispose();
   });
 
+  it("assigns roles only to connected eligible players", () => {
+    vi.useFakeTimers();
+    const engine = makeEngine(
+      [0, 0],
+      [...participants, { id: "offline", nickname: "Offline", connected: false }],
+    );
+
+    resultData(engine.start());
+
+    const connectedStates = participants.map((player) =>
+      engine.getPrivateState(player.id),
+    );
+    expect(connectedStates.filter((state) => state?.role === "MIMIC")).toHaveLength(1);
+    expect(engine.getPrivateState("offline")).toBeUndefined();
+    expect(engine.getPublicState().activePlayerCount).toBe(3);
+
+    engine.dispose();
+  });
+
   it("rejects invalid phases, clue payloads, and duplicate clues", () => {
     vi.useFakeTimers();
     const engine = makeEngine();
@@ -140,12 +159,7 @@ describe("GameEngine", () => {
       ok: false,
       error: { code: "CLUE_ALREADY_SUBMITTED" },
     });
-    expect(engine.submitClue("b", " QUIET CLUE ")).toMatchObject({
-      ok: false,
-      error: { code: "INVALID_CLUE" },
-    });
-
-    resultData(engine.submitClue("b", "second"));
+    expect(resultData(engine.submitClue("b", " QUIET CLUE ")).clueCount).toBe(2);
     const discussion = resultData(engine.submitClue("c", "third"));
     expect(discussion.phase).toBe("DISCUSSION");
     expect(engine.submitClue("a", "late")).toMatchObject({
@@ -293,6 +307,29 @@ describe("GameEngine", () => {
       roundWinner: "CITIZENS",
       lastRoundResult: { reason: "FINAL_GUESS_TIMEOUT" },
     });
+
+    engine.dispose();
+  });
+
+  it("resolves an unanswered vote phase once and ignores the stale timer", () => {
+    vi.useFakeTimers();
+    const engine = makeEngine();
+    advanceToVoting(engine);
+
+    vi.advanceTimersByTime(shortDurations.votingMs);
+    expect(engine.getPublicState().phase).toBe("REVOTE");
+    expect(engine.getPublicState().tiedCandidateIds).toEqual(["a", "b", "c"]);
+
+    vi.advanceTimersByTime(shortDurations.revoteMs);
+    expect(engine.getPublicState()).toMatchObject({
+      phase: "ROUND_RESULTS",
+      roundWinner: "MIMIC",
+      lastRoundResult: { reason: "REVOTE_TIE" },
+    });
+
+    const mimicWins = engine.getPublicState().mimicWins;
+    vi.advanceTimersByTime(shortDurations.revoteMs * 2);
+    expect(engine.getPublicState().mimicWins).toBe(mimicWins);
 
     engine.dispose();
   });

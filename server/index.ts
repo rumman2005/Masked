@@ -126,7 +126,13 @@ export function getPort(): number {
     : DEFAULT_PORT;
 }
 
-export const { app, httpServer, io, roomManager } = createServerBundle();
+export const {
+  app,
+  httpServer,
+  io,
+  roomManager,
+  gameEngineRegistry,
+} = createServerBundle();
 
 // `server` is a convenient entry-point alias for consumers that do not need
 // the more descriptive `httpServer` name.

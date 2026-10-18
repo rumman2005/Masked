@@ -1,6 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { io, type Socket } from "socket.io-client";
 
+import type {
+  PrivateGameState,
+  PublicGameState,
+} from "../shared/game-protocol";
 import {
   NICKNAME_MAX_LENGTH,
   NICKNAME_MIN_LENGTH,
@@ -175,6 +179,10 @@ function App() {
     useState<ConnectionStatus>("connecting");
   const [connectionIssue, setConnectionIssue] = useState<string | null>(null);
   const [roomState, setRoomState] = useState<PublicRoomState | null>(null);
+  const [gameState, setGameState] = useState<PublicGameState | null>(null);
+  const [privateGameState, setPrivateGameState] =
+    useState<PrivateGameState | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [currentPlayerId, setCurrentPlayerId] = useState<string | null>(null);
   const [createNickname, setCreateNickname] = useState("");
   const [joinNickname, setJoinNickname] = useState("");
@@ -201,6 +209,8 @@ function App() {
         clearStoredSession();
         setCurrentPlayerId(null);
         setRoomState(null);
+        setGameState(null);
+        setPrivateGameState(null);
       }
     };
 
@@ -249,6 +259,10 @@ function App() {
 
     const handleRoomState = (nextRoomState: PublicRoomState): void => {
       setRoomState(nextRoomState);
+      if (nextRoomState.phase === "lobby") {
+        setGameState(null);
+        setPrivateGameState(null);
+      }
       setServerError(null);
     };
 
@@ -259,6 +273,8 @@ function App() {
         clearStoredSession();
         setCurrentPlayerId(null);
         setRoomState(null);
+        setGameState(null);
+        setPrivateGameState(null);
       }
     };
 
@@ -268,12 +284,29 @@ function App() {
       setAction(null);
     };
 
+    const handleGameState = (nextGameState: PublicGameState): void => {
+      setGameState(nextGameState);
+      setClockNow(Date.now());
+    };
+
+    const handlePrivateGameState = (nextPrivateState: PrivateGameState): void => {
+      setPrivateGameState(nextPrivateState);
+    };
+
+    const handleGameAborted = (): void => {
+      setGameState(null);
+      setPrivateGameState(null);
+    };
+
     lobbySocket.on("connect", handleConnect);
     lobbySocket.on("disconnect", handleDisconnect);
     lobbySocket.on("connect_error", handleConnectionError);
     lobbySocket.on("room_state", handleRoomState);
     lobbySocket.on("lobby_error", handleLobbyError);
     lobbySocket.on("game_started", handleGameStarted);
+    lobbySocket.on("game_state", handleGameState);
+    lobbySocket.on("private_game_state", handlePrivateGameState);
+    lobbySocket.on("game_aborted", handleGameAborted);
     lobbySocket.connect();
 
     return () => {
@@ -283,9 +316,22 @@ function App() {
       lobbySocket.off("room_state", handleRoomState);
       lobbySocket.off("lobby_error", handleLobbyError);
       lobbySocket.off("game_started", handleGameStarted);
+      lobbySocket.off("game_state", handleGameState);
+      lobbySocket.off("private_game_state", handlePrivateGameState);
+      lobbySocket.off("game_aborted", handleGameAborted);
       lobbySocket.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (gameState?.deadlineAt === null || gameState?.deadlineAt === undefined) {
+      setClockNow(Date.now());
+      return;
+    }
+
+    const interval = window.setInterval(() => setClockNow(Date.now()), 250);
+    return () => window.clearInterval(interval);
+  }, [gameState?.deadlineAt]);
 
   const isBusy = action !== null;
   const currentPlayer: PublicPlayer | undefined = roomState?.players.find(
@@ -314,6 +360,10 @@ function App() {
       roomState.readyCount >= minimumReadyPlayers &&
       connectionStatus === "connected",
   );
+  const gameSecondsRemaining = gameState?.deadlineAt
+    ? Math.max(0, Math.ceil((gameState.deadlineAt - clockNow) / 1000))
+    : null;
+  const gamePhaseLabel = gameState?.phase.replaceAll("_", " ") ?? "";
 
   const handleCreateRoom = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -448,6 +498,8 @@ function App() {
       clearStoredSession();
       setCurrentPlayerId(null);
       setRoomState(null);
+      setGameState(null);
+      setPrivateGameState(null);
       setCopyStatus(null);
     });
   };
@@ -459,6 +511,8 @@ function App() {
       clearStoredSession();
       setCurrentPlayerId(null);
       setRoomState(null);
+      setGameState(null);
+      setPrivateGameState(null);
     }
   };
 
@@ -572,6 +626,36 @@ function App() {
                 <strong>{hostPlayer ? hostPlayer.nickname : "Not available"}</strong>
               </div>
             </div>
+
+            {gameState ? (
+              <div className="game-status-panel" aria-live="polite">
+                <div className="game-status-item">
+                  <span className="summary-label">Server phase</span>
+                  <strong>{gamePhaseLabel}</strong>
+                </div>
+                <div className="game-status-item">
+                  <span className="summary-label">Round</span>
+                  <strong>
+                    {gameState.roundNumber} / {gameState.totalRounds}
+                  </strong>
+                </div>
+                <div className="game-status-item game-status-time">
+                  <span className="summary-label">Time left</span>
+                  <strong>
+                    {gameSecondsRemaining === null
+                      ? "—"
+                      : `${gameSecondsRemaining}s`}
+                  </strong>
+                </div>
+                <p className="private-role-note">
+                  {privateGameState?.role === "CITIZEN"
+                    ? `Your secret word: ${privateGameState.secretWord ?? "—"}`
+                    : privateGameState?.role === "MIMIC"
+                      ? "Your role: Mimic · the secret word is hidden."
+                      : "Your private role is loading…"}
+                </p>
+              </div>
+            ) : null}
 
             <div className="player-section">
               <div className="section-heading-row">

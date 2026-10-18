@@ -1,3 +1,14 @@
+import type {
+  GameAbortedEvent,
+  GameAckResponse,
+  PrivateGameState,
+  PublicGameState,
+  SubmitCluePayload,
+  SubmitFinalGuessPayload,
+  SubmitVotePayload,
+  GameError,
+} from "./game-protocol.js";
+
 export const ROOM_MIN_PLAYERS = 3;
 export const ROOM_MAX_PLAYERS = 10;
 export const ROOM_CODE_LENGTH = 6;
@@ -116,10 +127,30 @@ export interface ClientToServerEvents {
     payload: EmptyPayload,
     ack: (response: AckResponse<LeaveResult>) => void,
   ) => void;
+  submit_clue: (
+    payload: SubmitCluePayload,
+    ack: (response: GameAckResponse<PublicGameState>) => void,
+  ) => void;
+  submit_vote: (
+    payload: SubmitVotePayload,
+    ack: (response: GameAckResponse<PublicGameState>) => void,
+  ) => void;
+  submit_final_guess: (
+    payload: SubmitFinalGuessPayload,
+    ack: (response: GameAckResponse<PublicGameState>) => void,
+  ) => void;
+  rematch: (
+    payload: EmptyPayload,
+    ack: (response: GameAckResponse<PublicGameState>) => void,
+  ) => void;
 }
 
 export interface ServerToClientEvents {
   room_state: (state: PublicRoomState) => void;
   lobby_error: (error: LobbyError) => void;
   game_started: (state: PublicRoomState) => void;
+  game_state: (state: PublicGameState) => void;
+  private_game_state: (state: PrivateGameState) => void;
+  game_error: (error: GameError) => void;
+  game_aborted: (event: GameAbortedEvent) => void;
 }

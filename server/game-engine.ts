@@ -1,3 +1,5 @@
+import { randomInt } from "node:crypto";
+
 import {
   CLUE_MAX_LENGTH,
   CURATED_WORD_BANK,
@@ -212,6 +214,8 @@ export class GameEngine {
 
   private secretWord: string | undefined;
 
+  private previousSecretWord: string | undefined;
+
   private phase: GamePhase = "LOBBY";
 
   private roundNumber = 0;
@@ -254,7 +258,7 @@ export class GameEngine {
     this.roomCode = roomCode;
     this.players = this.createPlayers(participants);
     this.durations = resolveDurations(options.durations);
-    this.randomIndex = options.randomIndex ?? ((max) => Math.floor(Math.random() * max));
+    this.randomIndex = options.randomIndex ?? ((max) => randomInt(max));
     this.wordBank = this.createWordBank(options.wordBank);
     this.now = options.now ?? (() => Date.now());
   }
@@ -339,15 +343,6 @@ export class GameEngine {
           `Clue must be at most ${CLUE_MAX_LENGTH} characters.`,
         ),
       );
-    }
-
-    const normalizedClue = normalizeComparable(trimmedClue);
-    if (
-      this.clues.some((submittedClue) =>
-        normalizeComparable(submittedClue.clue) === normalizedClue,
-      )
-    ) {
-      return failure(error("INVALID_CLUE", "That clue has already been used."));
     }
 
     player.clue = trimmedClue;
@@ -825,7 +820,9 @@ export class GameEngine {
 
   private assignRolesAndWord(): void {
     this.roles.clear();
-    const playerIds = [...this.players.keys()];
+    const playerIds = [...this.players.values()]
+      .filter((player) => player.connected)
+      .map((player) => player.id);
     if (playerIds.length === 0) {
       this.secretWord = undefined;
       return;
@@ -836,11 +833,18 @@ export class GameEngine {
       this.roles.set(playerId, index === mimicIndex ? "MIMIC" : "CITIZEN");
     }
 
-    this.secretWord = this.wordBank[this.pickIndex(this.wordBank.length)];
+    const availableWords =
+      this.wordBank.length > 1 && this.previousSecretWord !== undefined
+        ? this.wordBank.filter((word) => word !== this.previousSecretWord)
+        : this.wordBank;
+    this.secretWord = availableWords[this.pickIndex(availableWords.length)];
+    this.previousSecretWord = this.secretWord;
   }
 
   private replaceMimicAfterRemoval(): void {
-    const remainingPlayerIds = [...this.players.keys()];
+    const remainingPlayerIds = [...this.players.values()]
+      .filter((player) => player.connected)
+      .map((player) => player.id);
     if (remainingPlayerIds.length === 0) {
       return;
     }
@@ -1169,7 +1173,6 @@ export class GameEngine {
     this.clearTimer();
     this.phaseGeneration += 1;
     this.deadlineAt = null;
-    this.emitState();
 
     const aborted: GameAbortedEvent = {
       roomCode: this.roomCode,
@@ -1179,13 +1182,8 @@ export class GameEngine {
       roomCode: this.roomCode,
       type: "aborted",
       aborted,
+      reason: aborted.reason,
     };
-    // The flat property keeps older transport adapters compatible without
-    // changing the serialized GameEngineEvent shape.
-    Object.defineProperty(abortedEvent, "reason", {
-      value: aborted.reason,
-      enumerable: false,
-    });
     this.emit(abortedEvent);
   }
 

@@ -2,8 +2,8 @@
 
 MASKED is a desktop-first browser multiplayer social deduction game. The
 current implementation includes a React/Vite client, an Express/Socket.IO
-server, and a real in-memory multiplayer room lobby. Game-round mechanics are
-intentionally not implemented yet.
+server, a real in-memory multiplayer room lobby, and a server-authoritative
+testable game engine. The browser round UI is intentionally still minimal.
 
 ## Requirements
 
@@ -51,8 +51,10 @@ npm test
 
 The current tests check the health response, a real Socket.IO client
 connection, room capacity and validation, readiness, host authorization,
-disconnect/host transfer, reconnect sessions, and lobby event broadcasts.
-TypeScript can be checked with:
+disconnect/host transfer, reconnect sessions, lobby event broadcasts, role and
+secret isolation, phase validation, clues, votes, revotes, final guesses,
+timers, scoring, rematches, and gameplay disconnects. TypeScript can be
+checked with:
 
 ```bash
 npm run typecheck
