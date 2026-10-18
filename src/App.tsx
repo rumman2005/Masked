@@ -1869,6 +1869,7 @@ function App() {
                       className={`button ${currentPlayer?.ready ? "button-muted" : "button-primary"}`}
                       type="button"
                       onClick={handleSetReady}
+                      aria-pressed={currentPlayer?.ready ?? false}
                       disabled={
                         isBusy ||
                         connectionStatus !== "connected" ||
