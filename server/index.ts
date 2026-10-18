@@ -135,6 +135,7 @@ export const {
   io,
   roomManager,
   gameEngineRegistry,
+  chatManager,
 } = createServerBundle();
 
 // `server` is a convenient entry-point alias for consumers that do not need

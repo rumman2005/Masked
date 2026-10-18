@@ -611,9 +611,9 @@ function App() {
       gameState?.phase === "DISCUSSION" &&
       connectionStatus === "connected",
   );
-  const voteOptions: PublicGamePlayer[] = gameState
+  const voteOptions: PublicGamePlayer[] = gameState && privateStateIsCurrent
     ? gameState.players.filter((player) =>
-        privateGameState?.eligibleVoteTargetIds.includes(player.id),
+        privateGameState?.eligibleVoteTargetIds.includes(player.id) ?? false,
       )
     : [];
 

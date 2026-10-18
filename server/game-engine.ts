@@ -1017,7 +1017,7 @@ export class GameEngine {
     if (this.roles.get(identifiedPlayerId) === "MIMIC") {
       this.enterPhase("FINAL_GUESS");
     } else {
-      this.resolveRound("CITIZENS", "CITIZEN_IDENTIFIED", identifiedPlayerId);
+      this.resolveRound("MIMIC", "MIMIC_NOT_IDENTIFIED", identifiedPlayerId);
     }
   }
 

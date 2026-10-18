@@ -170,7 +170,7 @@ describe("GameEngine", () => {
     engine.dispose();
   });
 
-  it("validates secret votes and resolves a unique citizen target", () => {
+  it("validates secret votes and gives the Mimic the round when a Citizen is targeted", () => {
     vi.useFakeTimers();
     const engine = makeEngine();
     advanceToVoting(engine);
@@ -193,11 +193,11 @@ describe("GameEngine", () => {
 
     expect(resolved).toMatchObject({
       phase: "ROUND_RESULTS",
-      roundWinner: "CITIZENS",
+      roundWinner: "MIMIC",
       identifiedPlayerId: "b",
       lastRoundResult: {
-        reason: "CITIZEN_IDENTIFIED",
-        winner: "CITIZENS",
+        reason: "MIMIC_NOT_IDENTIFIED",
+        winner: "MIMIC",
       },
     });
     expect(resolved.voteCount).toBe(0);
@@ -341,32 +341,58 @@ describe("GameEngine", () => {
     expect(getMatchWinner(1, 2)).toBe("CITIZENS");
 
     const engine = makeEngine();
-    advanceToVoting(engine);
-    resultData(engine.submitVote("a", "b"));
-    resultData(engine.submitVote("b", "a"));
-    resultData(engine.submitVote("c", "b"));
+    const playMimicRound = (roundNumber: number): PublicGameState => {
+      advanceToVoting(engine);
+      const mimicId = participants.find(
+        (player) => engine.getPrivateState(player.id)?.role === "MIMIC",
+      )?.id;
+      const targetId = participants.find(
+        (player) => player.id !== mimicId,
+      )?.id;
+      expect(mimicId).toBeDefined();
+      expect(targetId).toBeDefined();
+
+      const otherVoters = participants.filter(
+        (player) => player.id !== targetId,
+      );
+      resultData(engine.submitVote(otherVoters[0].id, targetId ?? ""));
+      resultData(engine.submitVote(otherVoters[1].id, targetId ?? ""));
+      const targetVote = participants.find(
+        (player) => player.id === targetId,
+      );
+      const resolved = resultData(
+        engine.submitVote(targetVote?.id ?? "", mimicId ?? ""),
+      );
+      expect(resolved.roundWinner).toBe("MIMIC");
+      expect(resolved.roundNumber).toBe(roundNumber);
+      return resolved;
+    };
+
+    expect(playMimicRound(1)).toMatchObject({
+      phase: "ROUND_RESULTS",
+      citizenWins: 0,
+      mimicWins: 1,
+    });
     expect(finishRoundResults(engine)).toMatchObject({
       phase: "ROLE_REVEAL",
       roundNumber: 2,
-      citizenWins: 1,
-      mimicWins: 0,
+      citizenWins: 0,
+      mimicWins: 1,
     });
 
-    advanceToVoting(engine);
-    resultData(engine.submitVote("a", "b"));
-    resultData(engine.submitVote("b", "a"));
-    const matchResults = resultData(engine.submitVote("c", "b"));
+    const matchResults = playMimicRound(2);
     expect(matchResults).toMatchObject({
       phase: "ROUND_RESULTS",
       roundNumber: 2,
-      citizenWins: 2,
+      citizenWins: 0,
+      mimicWins: 2,
       matchWinner: null,
     });
     expect(finishRoundResults(engine)).toMatchObject({
       phase: "MATCH_RESULTS",
-      citizenWins: 2,
-      mimicWins: 0,
-      matchWinner: "CITIZENS",
+      citizenWins: 0,
+      mimicWins: 2,
+      matchWinner: "MIMIC",
     });
 
     engine.dispose();
@@ -375,23 +401,27 @@ describe("GameEngine", () => {
   it("resets scores, roles, and word on rematch", () => {
     vi.useFakeTimers();
     const engine = makeEngine([0, 0, 1, 1, 2, 2, 0, 2]);
-    advanceToVoting(engine);
-    resultData(engine.submitVote("a", "b"));
-    resultData(engine.submitVote("b", "a"));
-    resultData(engine.submitVote("c", "b"));
-    finishRoundResults(engine);
-    advanceToVoting(engine);
-    resultData(engine.submitVote("a", "b"));
-    resultData(engine.submitVote("b", "a"));
-    resultData(engine.submitVote("c", "b"));
-    if (engine.getPublicState().phase === "FINAL_GUESS") {
-      const mimic = participants.find(
+    const playMimicRound = (): void => {
+      advanceToVoting(engine);
+      const mimicId = participants.find(
         (player) => engine.getPrivateState(player.id)?.role === "MIMIC",
-      );
-      expect(mimic).toBeDefined();
-      resultData(engine.submitFinalGuess(mimic?.id ?? "", "wrong"));
-    }
-    finishRoundResults(engine);
+      )?.id;
+      const targetId = participants.find(
+        (player) => player.id !== mimicId,
+      )?.id;
+      expect(mimicId).toBeDefined();
+      expect(targetId).toBeDefined();
+
+      for (const player of participants.filter((player) => player.id !== targetId)) {
+        resultData(engine.submitVote(player.id, targetId ?? ""));
+      }
+      resultData(engine.submitVote(targetId ?? "", mimicId ?? ""));
+      expect(engine.getPublicState().roundWinner).toBe("MIMIC");
+      finishRoundResults(engine);
+    };
+
+    playMimicRound();
+    playMimicRound();
 
     const before = engine.getPrivateState("a");
     expect(engine.getPublicState().phase).toBe("MATCH_RESULTS");
@@ -419,8 +449,8 @@ describe("GameEngine", () => {
     resultData(engine.submitVote("a", "b"));
     resultData(engine.submitVote("b", "a"));
     const resolved = resultData(engine.submitVote("c", "b"));
-    expect(resolved.citizenWins).toBe(1);
-    expect(engine.getPublicState().citizenWins).toBe(1);
+    expect(resolved.mimicWins).toBe(1);
+    expect(engine.getPublicState().mimicWins).toBe(1);
 
     const aborted = engine.setPlayerConnected("a", false);
     expect(aborted).toMatchObject({ ok: true, data: { activePlayerCount: 2 } });

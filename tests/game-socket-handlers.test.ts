@@ -15,9 +15,26 @@ import type {
   ServerToClientEvents,
   SessionPayload,
 } from "../shared/protocol.js";
+import {
+  GameEngineRegistry,
+  type GameEngineOptions,
+} from "../server/game-engine.js";
 import { createServerBundle, type ServerBundle } from "../server/index.js";
 
 type TestSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+
+class ConfiguredGameEngineRegistry extends GameEngineRegistry {
+  public constructor(private readonly engineOptions: GameEngineOptions) {
+    super();
+  }
+
+  public override start(
+    roomCode: string,
+    participants?: Parameters<GameEngineRegistry["start"]>[1],
+  ) {
+    return super.start(roomCode, participants, this.engineOptions);
+  }
+}
 
 let activeBundle: ServerBundle | undefined;
 const clients: TestSocket[] = [];
@@ -130,6 +147,31 @@ function nextEvent<T>(
       clearTimeout(timeout);
       resolve(value);
     }) as never);
+  });
+}
+
+function nextMatchingEvent<T>(
+  socket: TestSocket,
+  event: keyof ServerToClientEvents,
+  predicate: (value: T) => boolean,
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      socket.off(event, listener);
+      reject(new Error(`Timed out waiting for matching ${event}.`));
+    }, 5_000);
+
+    const listener = ((value: T): void => {
+      if (!predicate(value)) {
+        return;
+      }
+
+      clearTimeout(timeout);
+      socket.off(event, listener);
+      resolve(value);
+    }) as never;
+
+    socket.on(event, listener);
   });
 }
 
@@ -331,5 +373,115 @@ describe("Module 3 Socket.IO game integration", () => {
       error: { code: "INVALID_PAYLOAD" },
     });
     expect(await gameError).toMatchObject({ code: "INVALID_PAYLOAD" });
+  });
+
+  it("drives a real socket round from private role reveal through results and the next round", async () => {
+    const registryOptions: GameEngineOptions = {
+      wordBank: ["ANCHOR"],
+      randomIndex: () => 0,
+      durations: {
+        roleRevealMs: 5,
+        clueSubmissionMs: 60_000,
+        discussionMs: 5,
+        votingMs: 60_000,
+        revoteMs: 60_000,
+        finalGuessMs: 60_000,
+        roundResultsMs: 5,
+      },
+    };
+    activeBundle = createServerBundle(
+      undefined,
+      new ConfiguredGameEngineRegistry(registryOptions),
+    );
+    const port = await startTestServer(activeBundle);
+    const setup = await setupRoom(port);
+
+    const privateStatePromises = setup.sockets.map((socket) =>
+      nextEvent<PrivateGameState>(socket, "private_game_state"),
+    );
+    const cluePhase = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "CLUE_SUBMISSION" && state.roundNumber === 1,
+    );
+    expect(await startRoom(setup)).toMatchObject({ phase: "playing" });
+    const privateStates = await Promise.all(privateStatePromises);
+    await cluePhase;
+
+    const mimicState = privateStates.find((state) => state.role === "MIMIC");
+    expect(mimicState).toBeDefined();
+    const mimicIndex = setup.sessions.findIndex(
+      (session) => session.playerId === mimicState?.playerId,
+    );
+    expect(mimicIndex).toBeGreaterThanOrEqual(0);
+
+    const discussionPhase = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "DISCUSSION" && state.roundNumber === 1,
+    );
+    for (const [index, socket] of setup.sockets.entries()) {
+      expect(
+        await emitGameAck<PublicGameState>(socket, "submit_clue", {
+          clue: `clue-${index}`,
+        }),
+      ).toMatchObject({ ok: true });
+    }
+    await discussionPhase;
+
+    const votingPhase = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "VOTING" && state.roundNumber === 1,
+    );
+    // The discussion deadline is server-owned; use the configured short test
+    // timer rather than advancing phase locally from the browser.
+    await votingPhase;
+
+    const mimicSession = setup.sessions[mimicIndex];
+    const citizenSession = setup.sessions.find(
+      (session) => session.playerId !== mimicSession.playerId,
+    );
+    expect(citizenSession).toBeDefined();
+    const roundResults = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "FINAL_GUESS" && state.roundNumber === 1,
+    );
+    for (const [index, socket] of setup.sockets.entries()) {
+      const targetPlayerId =
+        index === mimicIndex
+          ? citizenSession?.playerId ?? ""
+          : mimicSession.playerId;
+      expect(
+        await emitGameAck<PublicGameState>(socket, "submit_vote", {
+          targetPlayerId,
+        }),
+      ).toMatchObject({ ok: true });
+    }
+    await roundResults;
+
+    const completedRound = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "ROUND_RESULTS" && state.roundNumber === 1,
+    );
+    const finalGuess = await emitGameAck<PublicGameState>(
+      setup.sockets[mimicIndex],
+      "submit_final_guess",
+      { guess: "anchor" },
+    );
+    expect(finalGuess).toMatchObject({
+      ok: true,
+      data: { phase: "ROUND_RESULTS", roundWinner: "MIMIC" },
+    });
+    await completedRound;
+
+    const nextRound = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "ROLE_REVEAL" && state.roundNumber === 2,
+    );
+    await nextRound;
   });
 });

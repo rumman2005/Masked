@@ -8,6 +8,13 @@ import type {
   SubmitVotePayload,
   GameError,
 } from "./game-protocol.js";
+import type {
+  ChatAckResponse,
+  ChatClearedEvent,
+  ChatError,
+  ChatMessage,
+  SendChatMessagePayload,
+} from "./chat-protocol.js";
 
 export const ROOM_MIN_PLAYERS = 3;
 export const ROOM_MAX_PLAYERS = 10;
@@ -143,6 +150,14 @@ export interface ClientToServerEvents {
     payload: EmptyPayload,
     ack: (response: GameAckResponse<PublicGameState>) => void,
   ) => void;
+  return_to_lobby: (
+    payload: EmptyPayload,
+    ack: (response: GameAckResponse<PublicRoomState>) => void,
+  ) => void;
+  send_chat_message: (
+    payload: SendChatMessagePayload,
+    ack: (response: ChatAckResponse<ChatMessage>) => void,
+  ) => void;
 }
 
 export interface ServerToClientEvents {
@@ -153,4 +168,7 @@ export interface ServerToClientEvents {
   private_game_state: (state: PrivateGameState) => void;
   game_error: (error: GameError) => void;
   game_aborted: (event: GameAbortedEvent) => void;
+  chat_message: (message: ChatMessage) => void;
+  chat_error: (error: ChatError) => void;
+  chat_cleared: (event: ChatClearedEvent) => void;
 }
