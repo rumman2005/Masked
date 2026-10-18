@@ -351,7 +351,14 @@ describe("Module 2 Socket.IO lobby", () => {
       error: { code: "SESSION_ACTIVE" },
     });
 
+    const afterLeave = nextRoomState(player);
     const leave = await emitAck<{ left: true }>(replacement, "leave_room", {});
+    const stateAfterLeave = await afterLeave;
     expect(leave).toEqual({ ok: true, data: { left: true } });
+    expect(stateAfterLeave.playerCount).toBe(1);
+    expect(stateAfterLeave.hostPlayerId).toBe(
+      stateAfterLeave.players.find((roomPlayer) => roomPlayer.nickname === "Player")
+        ?.id,
+    );
   });
 });

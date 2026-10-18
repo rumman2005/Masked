@@ -32,7 +32,11 @@ interface StoredSession {
   playerId: string;
 }
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || "http://localhost:3001";
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  (typeof window === "undefined"
+    ? "http://localhost:3001"
+    : `${window.location.protocol}//${window.location.hostname}:3001`);
 const SESSION_STORAGE_KEY = "masked.lobby.session";
 
 // The module-level socket is deliberately shared by the app. React StrictMode can

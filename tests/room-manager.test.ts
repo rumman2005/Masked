@@ -109,6 +109,10 @@ describe("RoomManager", () => {
       ok: true,
       value: roomCode,
     });
+
+    expect(
+      manager.reconnectRoom(roomCode, "not-a-session-token", "socket-3"),
+    ).toMatchObject({ ok: false, error: { code: "INVALID_PAYLOAD" } });
   });
 
   it("enforces capacity, host authorization, readiness, and phase join rules", () => {
@@ -182,12 +186,17 @@ describe("RoomManager", () => {
       return;
     }
 
+    expect(manager.setReady("socket-host", true)).toMatchObject({ ok: true });
+    expect(manager.setReady("socket-player", true)).toMatchObject({ ok: true });
+
     const change = manager.disconnect("socket-host");
     expect(change?.state).toMatchObject({
       hostPlayerId: player.data.playerId,
+      playerCount: 1,
+      readyCount: 1,
       players: [
-        { nickname: "Host", connected: false },
-        { nickname: "Player", connected: true },
+        { nickname: "Host", ready: true, connected: false },
+        { nickname: "Player", ready: true, connected: true },
       ],
     });
 
@@ -207,7 +216,7 @@ describe("RoomManager", () => {
     expect(manager.getRoomState(host.roomCode)?.players).toContainEqual({
       id: host.data.playerId,
       nickname: "Host",
-      ready: false,
+      ready: true,
       connected: true,
     });
 

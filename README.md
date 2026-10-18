@@ -1,9 +1,9 @@
 # MASKED
 
-MASKED is a desktop-first browser multiplayer social deduction game. This
-repository currently contains the Module 1 bootstrap: a React/Vite client and
-an Express/Socket.IO server with a real development connection between them.
-Game rules and room mechanics are intentionally not implemented yet.
+MASKED is a desktop-first browser multiplayer social deduction game. The
+current implementation includes a React/Vite client, an Express/Socket.IO
+server, and a real in-memory multiplayer room lobby. Game-round mechanics are
+intentionally not implemented yet.
 
 ## Requirements
 
@@ -27,9 +27,9 @@ Run the client and server together:
 npm run dev
 ```
 
-Then open <http://localhost:5173>. The page should show `MASKED` and a live
-backend connection status. The server health endpoint is available at
-<http://localhost:3001/health>.
+Then open <http://localhost:5173>. The page should show `MASKED`, a live
+backend connection status, and create/join room controls. The server health
+endpoint is available at <http://localhost:3001/health>.
 
 To run either process separately:
 
@@ -49,8 +49,10 @@ Run the offline test suite after dependencies have been installed:
 npm test
 ```
 
-The current tests check the health response and a real Socket.IO client
-connection. TypeScript can be checked with:
+The current tests check the health response, a real Socket.IO client
+connection, room capacity and validation, readiness, host authorization,
+disconnect/host transfer, reconnect sessions, and lobby event broadcasts.
+TypeScript can be checked with:
 
 ```bash
 npm run typecheck

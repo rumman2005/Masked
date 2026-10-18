@@ -1,5 +1,6 @@
 import express, { type Express, type RequestHandler } from "express";
 import { createServer, type Server as NodeHttpServer } from "node:http";
+import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { Server as SocketIOServer } from "socket.io";
@@ -16,11 +17,36 @@ import {
 
 export const DEFAULT_PORT = 3001;
 
-const LOCALHOST_ORIGIN =
-  /^https?:\/\/(?:localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?$/i;
-
 function isAllowedOrigin(origin: string | undefined): boolean {
-  return origin === undefined || LOCALHOST_ORIGIN.test(origin);
+  if (origin === undefined) {
+    return true;
+  }
+
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return false;
+    }
+
+    const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    if (hostname === "localhost" || hostname === "::1") {
+      return true;
+    }
+
+    if (isIP(hostname) !== 4) {
+      return false;
+    }
+
+    const octets = hostname.split(".").map(Number);
+    return (
+      octets[0] === 127 ||
+      octets[0] === 10 ||
+      (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+      (octets[0] === 192 && octets[1] === 168)
+    );
+  } catch {
+    return false;
+  }
 }
 
 const localhostCors: RequestHandler = (request, response, next) => {

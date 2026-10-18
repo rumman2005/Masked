@@ -322,10 +322,10 @@ export class RoomManager {
 
     if (
       typeof sessionTokenValue !== "string" ||
-      sessionTokenValue.trim().length === 0
+      !/^[0-9a-f]{64}$/i.test(sessionTokenValue)
     ) {
       return failure(
-        error("INVALID_PAYLOAD", "Session token must be a non-empty string."),
+        error("INVALID_PAYLOAD", "Session token is invalid."),
       );
     }
 
@@ -677,14 +677,15 @@ export class RoomManager {
       ready: player.ready,
       connected: player.connected,
     }));
+    const connectedPlayers = players.filter((player) => player.connected);
 
     return {
       roomCode: room.roomCode,
       hostPlayerId: room.hostPlayerId,
       phase: room.phase,
       players,
-      playerCount: players.length,
-      readyCount: players.filter((player) => player.ready).length,
+      playerCount: connectedPlayers.length,
+      readyCount: connectedPlayers.filter((player) => player.ready).length,
       minPlayers: ROOM_MIN_PLAYERS,
       maxPlayers: ROOM_MAX_PLAYERS,
     };
