@@ -577,21 +577,33 @@ function App() {
     gameState?.deadlineAt === null || gameState?.deadlineAt === undefined
       ? null
       : Math.max(0, Math.ceil((gameState.deadlineAt - clockNow) / 1000));
+  const privateStateIsCurrent = Boolean(
+    gameState &&
+      privateGameState &&
+      currentPlayerId &&
+      privateGameState.playerId === currentPlayerId &&
+      privateGameState.roomCode === gameState.roomCode &&
+      privateGameState.phase === gameState.phase &&
+      privateGameState.roundNumber === gameState.roundNumber,
+  );
   const canSubmitClue = Boolean(
     gameState?.phase === "CLUE_SUBMISSION" &&
-      privateGameState?.phase === "CLUE_SUBMISSION" &&
+      privateGameState !== null &&
+      privateStateIsCurrent &&
       privateGameState.canSubmitClue,
   );
   const canSubmitVote = Boolean(
-    gameState &&
+      gameState &&
       (gameState.phase === "VOTING" || gameState.phase === "REVOTE") &&
-      privateGameState?.phase === gameState.phase &&
+      privateGameState !== null &&
+      privateStateIsCurrent &&
       privateGameState.canVote &&
       privateGameState.eligibleVoteTargetIds.includes(selectedVoteTarget),
   );
   const canSubmitFinalGuess = Boolean(
     gameState?.phase === "FINAL_GUESS" &&
-      privateGameState?.phase === "FINAL_GUESS" &&
+      privateGameState !== null &&
+      privateStateIsCurrent &&
       privateGameState.canFinalGuess,
   );
   const canSendChat = Boolean(
@@ -973,7 +985,7 @@ function App() {
       !isHost ||
       roomState?.phase !== "playing" ||
       gameState?.phase !== "MATCH_RESULTS" ||
-      privateGameState?.phase !== "MATCH_RESULTS" ||
+      !privateStateIsCurrent ||
       connectionStatus !== "connected"
     ) {
       return;
@@ -1008,7 +1020,7 @@ function App() {
       !isHost ||
       roomState?.phase !== "playing" ||
       gameState?.phase !== "MATCH_RESULTS" ||
-      privateGameState?.phase !== "MATCH_RESULTS" ||
+      !privateStateIsCurrent ||
       connectionStatus !== "connected"
     ) {
       return;
@@ -1055,7 +1067,11 @@ function App() {
     switch (gameState.phase) {
       case "ROLE_REVEAL": {
         const citizenState =
-          privateGameState?.role === "CITIZEN" ? privateGameState : null;
+          privateGameState !== null &&
+          privateStateIsCurrent &&
+          privateGameState.role === "CITIZEN"
+            ? privateGameState
+            : null;
 
         return (
           <section className="phase-panel phase-role" aria-labelledby="phase-title">
@@ -1069,7 +1085,9 @@ function App() {
               </span>
             </div>
 
-            {privateGameState?.role === "MIMIC" ? (
+            {privateGameState !== null &&
+            privateStateIsCurrent &&
+            privateGameState.role === "MIMIC" ? (
               <div className="role-reveal-card mimic-reveal-card">
                 <span className="role-symbol" aria-hidden="true">
                   ◈
@@ -1337,7 +1355,9 @@ function App() {
               </p>
             ) : null}
 
-            {privateGameState?.phase === gameState.phase && privateGameState.canVote ? (
+            {privateGameState !== null &&
+            privateStateIsCurrent &&
+            privateGameState.canVote ? (
               <form className="game-action-form vote-form" onSubmit={handleSubmitVote}>
                 <fieldset className="vote-options">
                   <legend>
@@ -1384,7 +1404,9 @@ function App() {
                   ✓
                 </span>
                 <p>
-                  {privateGameState?.phase === gameState.phase && !privateGameState.canVote
+                  {privateGameState !== null &&
+                  privateStateIsCurrent &&
+                  !privateGameState.canVote
                     ? "Your vote is recorded, or voting is no longer available to this session."
                     : "Waiting for your private voting permission from the server…"}
                 </p>
@@ -1456,7 +1478,9 @@ function App() {
                   ◌
                 </span>
                 <p>
-                  {privateGameState?.role === "MIMIC"
+                  {privateGameState !== null &&
+                  privateStateIsCurrent &&
+                  privateGameState.role === "MIMIC"
                     ? "Your final guess is already submitted or no longer available."
                     : "Only the server-authorized Mimic can submit a final guess."}
                 </p>
@@ -1562,7 +1586,7 @@ function App() {
                       isBusy ||
                       connectionStatus !== "connected" ||
                       gameState.phase !== "MATCH_RESULTS" ||
-                      privateGameState?.phase !== "MATCH_RESULTS"
+                      !privateStateIsCurrent
                     }
                   >
                     {pendingAction === "rematch" ? "Starting…" : "Start rematch"}
@@ -1575,7 +1599,7 @@ function App() {
                       isBusy ||
                       connectionStatus !== "connected" ||
                       gameState.phase !== "MATCH_RESULTS" ||
-                      privateGameState?.phase !== "MATCH_RESULTS"
+                      !privateStateIsCurrent
                     }
                   >
                     {pendingAction === "return-lobby" ? "Returning…" : "Return to lobby"}
@@ -1790,12 +1814,16 @@ function App() {
                   </strong>
                 </div>
                 <p className="private-role-note">
-                  {privateGameState?.role === "CITIZEN" ? (
+                  {privateGameState !== null &&
+                  privateStateIsCurrent &&
+                  privateGameState.role === "CITIZEN" ? (
                     <>
                       Private role: Citizen · your secret word is visible only in your
                       private reveal.
                     </>
-                  ) : privateGameState?.role === "MIMIC" ? (
+                  ) : privateGameState !== null &&
+                    privateStateIsCurrent &&
+                    privateGameState.role === "MIMIC" ? (
                     <>Private role: Mimic · there is no secret word for this role.</>
                   ) : (
                     <>Private role is syncing from the server…</>
