@@ -316,12 +316,15 @@ function resultError(value: unknown): GameError | undefined {
 export function registerSocketHandlers(
   io: LobbyServer,
   roomManager: RoomManager = new RoomManager(),
-  gameEngineRegistry: GameEngineRegistry = new GameEngineRegistry(),
+  providedGameEngineRegistry?: GameEngineRegistry,
 ): RoomManager {
   if (registeredServers.has(io)) {
     return roomManager;
   }
   registeredServers.add(io);
+
+  const gameEngineRegistry =
+    providedGameEngineRegistry ?? new GameEngineRegistry();
 
   const gameStates = new Map<string, CachedGameState>();
   const abortedRooms = new Set<string>();
@@ -341,6 +344,10 @@ export function registerSocketHandlers(
     roomCode: string,
     state: PublicGameState,
   ): void => {
+    if (abortedRooms.has(roomCode)) {
+      return;
+    }
+
     const cached = getCachedGameState(roomCode);
     if (JSON.stringify(cached.publicState) === JSON.stringify(state)) {
       return;
@@ -355,6 +362,10 @@ export function registerSocketHandlers(
     playerId: string,
     state: PrivateGameState,
   ): void => {
+    if (abortedRooms.has(roomCode)) {
+      return;
+    }
+
     const cached = getCachedGameState(roomCode);
     if (
       JSON.stringify(cached.privateStates.get(playerId)) ===
