@@ -2273,6 +2273,12 @@ textarea:focus-visible,
   .room-view {
     display: grid;
     grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.85fr);
+    grid-template-areas:
+      "heading heading"
+      "summary summary"
+      "status status"
+      "phase roster"
+      "actions actions";
     column-gap: 24px;
     align-items: start;
     padding: 28px 32px 26px;
@@ -2334,6 +2340,50 @@ textarea:focus-visible,
   .room-view:not(:has(.phase-panel)) > .room-actions {
     grid-row: 4;
     margin-top: 22px;
+  }
+
+  .room-view:has(.phase-panel):not(:has(.game-status-panel)) {
+    grid-template-areas:
+      "heading heading"
+      "summary summary"
+      "phase roster"
+      "actions actions";
+  }
+
+  .room-view:not(:has(.phase-panel)) {
+    grid-template-areas:
+      "heading heading"
+      "summary summary"
+      "players players"
+      "actions actions";
+  }
+
+  .room-heading {
+    grid-area: heading;
+  }
+
+  .room-summary {
+    grid-area: summary;
+  }
+
+  .game-status-panel {
+    grid-area: status;
+  }
+
+  .room-view:has(.phase-panel) > .phase-panel {
+    grid-area: phase;
+  }
+
+  .room-view:has(.phase-panel) > .compact-player-section {
+    grid-area: roster;
+  }
+
+  .room-view:not(:has(.phase-panel)) > .player-section {
+    grid-area: players;
+  }
+
+  .room-actions {
+    grid-area: actions;
   }
 
   .section-heading-row {
