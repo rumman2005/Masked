@@ -4,6 +4,16 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { Server as SocketIOServer } from "socket.io";
 
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from "../shared/protocol.js";
+import { RoomManager } from "./room-manager.js";
+import {
+  registerSocketHandlers,
+  type LobbyServer,
+} from "./socket-handlers.js";
+
 export const DEFAULT_PORT = 3001;
 
 const LOCALHOST_ORIGIN =
@@ -46,10 +56,13 @@ const socketCorsOrigin = (
 export interface ServerBundle {
   app: Express;
   httpServer: NodeHttpServer;
-  io: SocketIOServer;
+  io: LobbyServer;
+  roomManager: RoomManager;
 }
 
-export function createServerBundle(): ServerBundle {
+export function createServerBundle(
+  roomManager: RoomManager = new RoomManager(),
+): ServerBundle {
   const app = express();
 
   app.use(localhostCors);
@@ -60,7 +73,10 @@ export function createServerBundle(): ServerBundle {
   });
 
   const httpServer = createServer(app);
-  const io = new SocketIOServer(httpServer, {
+  const io: LobbyServer = new SocketIOServer<
+    ClientToServerEvents,
+    ServerToClientEvents
+  >(httpServer, {
     cors: {
       origin: socketCorsOrigin,
       methods: ["GET", "POST"],
@@ -68,7 +84,9 @@ export function createServerBundle(): ServerBundle {
     },
   });
 
-  return { app, httpServer, io };
+  registerSocketHandlers(io, roomManager);
+
+  return { app, httpServer, io, roomManager };
 }
 
 export function getPort(): number {
@@ -79,7 +97,7 @@ export function getPort(): number {
     : DEFAULT_PORT;
 }
 
-export const { app, httpServer, io } = createServerBundle();
+export const { app, httpServer, io, roomManager } = createServerBundle();
 
 // `server` is a convenient entry-point alias for consumers that do not need
 // the more descriptive `httpServer` name.
