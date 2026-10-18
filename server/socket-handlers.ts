@@ -10,6 +10,11 @@ import type {
   PublicGameState,
 } from "../shared/game-protocol.js";
 import type {
+  ChatAckResponse,
+  ChatError,
+  ChatMessage,
+} from "../shared/chat-protocol.js";
+import type {
   AckResponse,
   ClientToServerEvents,
   EmptyPayload,
@@ -23,6 +28,7 @@ import {
   type RoomManagerResult,
 } from "./room-manager.js";
 import { GameEngineRegistry } from "./game-engine.js";
+import { ChatManager } from "./chat-manager.js";
 
 export type LobbyServer = SocketIOServer<
   ClientToServerEvents,
@@ -36,6 +42,7 @@ export type LobbySocket = Socket<
 
 type Ack<T> = (response: AckResponse<T>) => void;
 type GameAck<T> = (response: GameAckResponse<T>) => void;
+type ChatAck<T> = (response: ChatAckResponse<T>) => void;
 
 interface CachedGameState {
   publicState?: PublicGameState;
@@ -173,6 +180,34 @@ function internalGameError(): GameError {
   );
 }
 
+function chatError(
+  code: ChatError["code"],
+  message: string,
+): ChatError {
+  return { code, message };
+}
+
+function sendChatFailure(
+  socket: LobbySocket,
+  ack: ChatAck<ChatMessage> | undefined,
+  errorValue: ChatError,
+): void {
+  if (typeof ack === "function") {
+    ack({ ok: false, error: errorValue });
+  }
+
+  socket.emit("chat_error", errorValue);
+}
+
+function sendChatSuccessAck(
+  ack: ChatAck<ChatMessage> | undefined,
+  data: ChatMessage,
+): void {
+  if (typeof ack === "function") {
+    ack({ ok: true, data });
+  }
+}
+
 function sendGameFailure<T>(
   socket: LobbySocket,
   ack: GameAck<T> | undefined,
@@ -197,6 +232,15 @@ function invalidGamePayloadResult<T>(
   message: string,
 ): false {
   sendGameFailure(socket, ack, gameError("INVALID_PAYLOAD", message));
+  return false;
+}
+
+function invalidChatPayloadResult(
+  socket: LobbySocket,
+  ack: ChatAck<ChatMessage> | undefined,
+  message: string,
+): false {
+  sendChatFailure(socket, ack, chatError("INVALID_PAYLOAD", message));
   return false;
 }
 
@@ -317,6 +361,7 @@ export function registerSocketHandlers(
   io: LobbyServer,
   roomManager: RoomManager = new RoomManager(),
   providedGameEngineRegistry?: GameEngineRegistry,
+  providedChatManager?: ChatManager,
 ): RoomManager {
   if (registeredServers.has(io)) {
     return roomManager;
@@ -325,6 +370,7 @@ export function registerSocketHandlers(
 
   const gameEngineRegistry =
     providedGameEngineRegistry ?? new GameEngineRegistry();
+  const chatManager = providedChatManager ?? new ChatManager();
 
   const gameStates = new Map<string, CachedGameState>();
   const abortedRooms = new Set<string>();
@@ -338,6 +384,23 @@ export function registerSocketHandlers(
     const created: CachedGameState = { privateStates: new Map() };
     gameStates.set(roomCode, created);
     return created;
+  };
+
+  const clearChat = (roomCode: string, roundNumber: number): void => {
+    chatManager.clearRoom(roomCode);
+    io.to(roomCode).emit("chat_cleared", { roomCode, roundNumber });
+  };
+
+  const clearChatForRoleReveal = (state: PublicGameState): void => {
+    const previousState = getCachedGameState(state.roomCode).publicState;
+    if (
+      previousState?.phase === "ROLE_REVEAL" &&
+      previousState.roundNumber === state.roundNumber
+    ) {
+      return;
+    }
+
+    clearChat(state.roomCode, state.roundNumber);
   };
 
   const emitPublicGameState = (
@@ -483,6 +546,14 @@ export function registerSocketHandlers(
     }
     abortedRooms.add(event.roomCode);
 
+    const cachedState = getCachedGameState(event.roomCode).publicState;
+    const engineState = readEngineState(event.roomCode);
+    const roundNumber = isPublicGameState(cachedState)
+      ? cachedState.roundNumber
+      : isPublicGameState(engineState)
+        ? engineState.roundNumber
+        : 0;
+    clearChat(event.roomCode, roundNumber);
     io.to(event.roomCode).emit("game_aborted", event);
     const reset = safely(() => roomManager.resetRoomToLobby(event.roomCode));
     if (reset.ok) {
@@ -538,6 +609,9 @@ export function registerSocketHandlers(
         kind.toLowerCase().includes("public") ||
         kind.toLowerCase().includes("state"))
     ) {
+      if (publicState.phase === "ROLE_REVEAL") {
+        clearChatForRoleReveal(publicState);
+      }
       emitPublicGameState(publicState.roomCode, publicState);
     }
   };
@@ -550,9 +624,9 @@ export function registerSocketHandlers(
     handleRegistryEvent(resultData(output));
   };
 
-  const resolveGameContext = (
+  const resolveGameContext = <T>(
     socket: LobbySocket,
-    ack: GameAck<PublicGameState> | undefined,
+    ack: GameAck<T> | undefined,
   ): GameContext | undefined => {
     const authenticatedPlayer = roomManager.getAuthenticatedPlayer(socket.id);
     if (authenticatedPlayer === undefined) {
@@ -622,8 +696,62 @@ export function registerSocketHandlers(
     sendGameSuccessAck(ack, publicState);
   };
 
+  const resolveChatContext = (
+    socket: LobbySocket,
+    ack: ChatAck<ChatMessage> | undefined,
+  ): { roomCode: string; playerId: string; nickname: string } | undefined => {
+    const authenticatedPlayer = roomManager.getAuthenticatedPlayer(socket.id);
+    if (authenticatedPlayer === undefined) {
+      sendChatFailure(
+        socket,
+        ack,
+        chatError("NOT_IN_ROOM", "You must join a room before using chat."),
+      );
+      return undefined;
+    }
+
+    const roomState = roomManager.getRoomState(authenticatedPlayer.roomCode);
+    const roomPlayer = roomState?.players.find(
+      (player) => player.id === authenticatedPlayer.playerId,
+    );
+    if (roomState === undefined || roomPlayer === undefined) {
+      sendChatFailure(
+        socket,
+        ack,
+        chatError("NOT_IN_ROOM", "You are not in a room."),
+      );
+      return undefined;
+    }
+
+    const gameState = readEngineState(authenticatedPlayer.roomCode);
+    if (
+      roomState.phase !== "playing" ||
+      !isPublicGameState(gameState) ||
+      gameState.phase !== "DISCUSSION"
+    ) {
+      sendChatFailure(
+        socket,
+        ack,
+        chatError(
+          "CHAT_NOT_AVAILABLE",
+          "Chat is only available during the discussion phase.",
+        ),
+      );
+      return undefined;
+    }
+
+    return {
+      roomCode: authenticatedPlayer.roomCode,
+      playerId: authenticatedPlayer.playerId,
+      nickname: roomPlayer.nickname,
+    };
+  };
+
   roomManager.subscribe(({ roomCode, state }) => {
     emitRoomState(io, roomCode, state);
+    if (state === undefined) {
+      chatManager.removeRoom(roomCode);
+    }
   });
 
   gameEngineRegistry.subscribe((event: unknown) => {
@@ -633,6 +761,7 @@ export function registerSocketHandlers(
   io.once("close", () => {
     gameStates.clear();
     abortedRooms.clear();
+    chatManager.dispose();
     try {
       gameEngineRegistry.dispose();
     } catch {
@@ -972,6 +1101,123 @@ export function registerSocketHandlers(
       );
     });
 
+    socket.on("return_to_lobby", (payload, ack) => {
+      if (
+        !isRecord(payload) ||
+        !hasExactKeys(payload, [])
+      ) {
+        invalidGamePayloadResult(
+          socket,
+          ack,
+          "Return to lobby payload must be an empty object.",
+        );
+        return;
+      }
+
+      const context = resolveGameContext(socket, ack);
+      if (context === undefined) {
+        return;
+      }
+
+      if (!roomManager.isHost(socket.id, context.roomCode)) {
+        sendGameFailure(
+          socket,
+          ack,
+          gameError("NOT_HOST", "Only the host can return the room to the lobby."),
+        );
+        return;
+      }
+
+      const currentState = readEngineState(context.roomCode);
+      if (!isPublicGameState(currentState)) {
+        sendGameFailure(socket, ack, internalGameError());
+        return;
+      }
+
+      if (currentState.phase !== "MATCH_RESULTS") {
+        sendGameFailure(
+          socket,
+          ack,
+          gameError(
+            "INVALID_PHASE",
+            "The room can return to the lobby only after match results.",
+          ),
+        );
+        return;
+      }
+
+      try {
+        gameEngineRegistry.remove(context.roomCode);
+      } catch {
+        sendGameFailure(socket, ack, internalGameError());
+        return;
+      }
+
+      const reset = safely(() =>
+        roomManager.resetRoomToLobby(context.roomCode),
+      );
+      if (!reset.ok) {
+        sendGameFailure(socket, ack, internalGameError());
+        return;
+      }
+
+      clearChat(context.roomCode, currentState.roundNumber);
+      gameStates.delete(context.roomCode);
+      abortedRooms.delete(context.roomCode);
+      const lobbyState = reset.state ?? reset.data;
+      emitRoomState(io, context.roomCode, lobbyState);
+      sendGameSuccessAck(ack, lobbyState);
+    });
+
+    socket.on("send_chat_message", (payload, ack) => {
+      if (
+        !isRecord(payload) ||
+        !hasExactKeys(payload, ["message"]) ||
+        typeof payload.message !== "string"
+      ) {
+        invalidChatPayloadResult(
+          socket,
+          ack,
+          "Chat payload must contain a message string.",
+        );
+        return;
+      }
+
+      const context = resolveChatContext(socket, ack);
+      if (context === undefined) {
+        return;
+      }
+
+      let result: ReturnType<ChatManager["sendMessage"]>;
+      try {
+        result = chatManager.sendMessage({
+          roomCode: context.roomCode,
+          playerId: context.playerId,
+          socketId: socket.id,
+          nickname: context.nickname,
+          message: payload.message,
+        });
+      } catch {
+        sendChatFailure(
+          socket,
+          ack,
+          chatError(
+            "INTERNAL_ERROR",
+            "The server could not send that chat message.",
+          ),
+        );
+        return;
+      }
+
+      if (!result.ok) {
+        sendChatFailure(socket, ack, result.error);
+        return;
+      }
+
+      io.to(context.roomCode).emit("chat_message", result.data);
+      sendChatSuccessAck(ack, result.data);
+    });
+
     socket.on("leave_room", (payload, ack) => {
       if (!ensureEmptyPayload(socket, ack, payload)) {
         return;
@@ -1006,6 +1252,7 @@ export function registerSocketHandlers(
 
       sendSuccessAck(ack, result.data);
       clearSocketSession(socket);
+      chatManager.clearSocket(socket.id);
       if (roomCode !== undefined) {
         socket.leave(roomCode);
         if (!abortedRooms.has(roomCode) || result.state?.phase !== "playing") {
@@ -1016,6 +1263,7 @@ export function registerSocketHandlers(
 
     socket.on("disconnect", () => {
       clearSocketSession(socket);
+      chatManager.clearSocket(socket.id);
       const change = roomManager.disconnect(socket.id);
       if (change !== undefined) {
         const wasPlaying = change.state?.phase === "playing";
