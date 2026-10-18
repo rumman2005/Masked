@@ -584,6 +584,18 @@ export class GameEngine {
       return success(this.getPublicState());
     }
 
+    if (
+      this.started &&
+      !this.aborted &&
+      removedRole === "MIMIC" &&
+      this.phase !== "LOBBY" &&
+      this.phase !== "ROUND_RESULTS" &&
+      this.phase !== "MATCH_RESULTS" &&
+      this.phase !== "FINAL_GUESS"
+    ) {
+      this.replaceMimicAfterRemoval();
+    }
+
     if (this.phase === "CLUE_SUBMISSION") {
       if (this.allConnectedPlayersSubmittedClues()) {
         this.enterPhase("DISCUSSION");
@@ -825,6 +837,18 @@ export class GameEngine {
     }
 
     this.secretWord = this.wordBank[this.pickIndex(this.wordBank.length)];
+  }
+
+  private replaceMimicAfterRemoval(): void {
+    const remainingPlayerIds = [...this.players.keys()];
+    if (remainingPlayerIds.length === 0) {
+      return;
+    }
+
+    const replacementId = remainingPlayerIds[this.pickIndex(remainingPlayerIds.length)];
+    for (const playerId of remainingPlayerIds) {
+      this.roles.set(playerId, playerId === replacementId ? "MIMIC" : "CITIZEN");
+    }
   }
 
   private pickIndex(max: number): number {
