@@ -3,5 +3,6 @@ dist
 dist-server
 coverage
 .git
-.env
+.opencode
+.env*
 *.log

@@ -1,8 +1,9 @@
 import express, { type Express, type RequestHandler } from "express";
 import { createServer, type Server as NodeHttpServer } from "node:http";
+import { existsSync } from "node:fs";
 import { isIP } from "node:net";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { Server as SocketIOServer } from "socket.io";
 
 import type {
@@ -24,8 +25,21 @@ import { registerSoloAiRoutes } from "./ai/solo-decision.js";
 
 export const DEFAULT_PORT = 3001;
 
+function configuredAllowedOrigins(): ReadonlySet<string> {
+  return new Set(
+    (process.env.ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim().replace(/\/+$/u, ""))
+      .filter((origin) => origin.length > 0),
+  );
+}
+
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (origin === undefined) {
+    return true;
+  }
+
+  if (configuredAllowedOrigins().has(origin.replace(/\/+$/u, ""))) {
     return true;
   }
 
@@ -86,6 +100,37 @@ const socketCorsOrigin = (
   callback(null, isAllowedOrigin(origin));
 };
 
+function clientDistDirectory(): string | undefined {
+  const serverDirectory = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    resolve(serverDirectory, "../dist"),
+    resolve(serverDirectory, "../../dist"),
+  ];
+
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+function registerClientRoutes(app: Express): void {
+  const clientDist = clientDistDirectory();
+  if (clientDist === undefined) {
+    return;
+  }
+
+  app.use(express.static(clientDist));
+  app.use((request, response, next) => {
+    if (
+      request.method !== "GET" ||
+      request.path.startsWith("/api/") ||
+      request.path.startsWith("/socket.io")
+    ) {
+      next();
+      return;
+    }
+
+    response.sendFile(resolve(clientDist, "index.html"));
+  });
+}
+
 export interface ServerBundle {
   app: Express;
   httpServer: NodeHttpServer;
@@ -125,6 +170,7 @@ export function createServerBundle(
 
   registerSocketHandlers(io, roomManager, gameEngineRegistry, chatManager);
   registerSoloAiRoutes(app, aiProviderService);
+  registerClientRoutes(app);
 
   return {
     app,

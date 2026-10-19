@@ -1,37 +1,70 @@
 # MASKED
 
-MASKED is a desktop-first browser social deduction game. The current
-implementation includes a React/Vite client, an Express/Socket.IO server, a
-real in-memory multiplayer room lobby, a server-authoritative testable game
-engine, synchronized round screens, discussion chat, and a transport-free local
-Solo Showdown against deterministic bot personalities. The game uses a broad
-curated word bank, reveals every final-round role when a match ends, and keeps a
-room-scoped leaderboard for groups that play multiple matches together.
+MASKED is a desktop-first browser social-deduction game about clues, hidden
+roles, and reading the table. It includes a React/Vite client, an
+Express/Socket.IO server, an in-memory multiplayer lobby, a server-authoritative
+game engine, discussion chat, a local Solo Showdown, server-side AI provider
+routing, match results, and a room-scoped leaderboard.
+
+The repository is designed to rebuild from a clean machine. Runtime versions,
+dependencies, container instructions, environment placeholders, tests, and
+deployment steps are kept in the repository so another developer can reproduce
+the project without relying on this workstation.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Development](#development)
+- [Configuration](#configuration)
+- [Server-side AI providers](#server-side-ai-providers)
+- [Gameplay](#gameplay)
+- [Checks](#checks)
+- [Deployment](#deployment)
+- [Rules and controls](#rules-and-controls)
+- [Troubleshooting](#troubleshooting)
+- [Known limitations](#known-limitations)
 
 ## Requirements
 
-- Node.js `22.17.1` (see `.nvmrc`)
-- npm
+- Node.js `22.17.1` — pinned in `.nvmrc` and `package.json`.
+- npm, bundled with Node.js.
+- Docker Engine or Docker Desktop for the container workflow.
 
-## Setup
+## Quick start
 
-```bash
-npm ci
-```
-
-Copy `.env.example` to `.env` only when local environment overrides are needed.
-The defaults use port `3001` for the server and port `5173` for Vite.
-
-For a clean local setup, use the pinned Node.js version and install from the
-lockfile:
+Install the exact locked dependency tree:
 
 ```bash
 nvm use
 npm ci
 ```
 
-Do not commit `.env`; it is ignored. The committed `.env.example` contains the
-only supported local overrides.
+Start the client and server together:
+
+```bash
+npm run dev
+```
+
+Open <http://localhost:5173>. The server health endpoint is available at
+<http://localhost:3001/health>. Choose **Play Solo** for a local match; Solo
+does not require a room or multiplayer connection.
+
+The server startup wrapper loads `.env` when it exists. Copy the safe template
+before adding local-only settings:
+
+```bash
+cp .env.example .env
+```
+
+On Windows PowerShell, use:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Never commit `.env`. It is ignored by Git and is excluded from Docker builds.
+The committed `.env.example` contains placeholders only.
 
 ## Development
 
@@ -54,8 +87,47 @@ npm run dev:server
 npm run dev:client
 ```
 
-The client uses `VITE_SOCKET_URL` when provided and otherwise connects to
-`http://localhost:3001`.
+`npm run dev:server` loads `.env` before importing the server, so provider keys
+and server settings are available without placing secrets in client code.
+Vite loads `VITE_*` values at client startup. The client uses
+`VITE_SOCKET_URL` when provided and otherwise connects to the page hostname on
+port `3001`.
+
+### Project layout
+
+```text
+src/              React client and UI components
+shared/           Transport-free game rules and wire-safe types
+server/           Express, Socket.IO, room state, and AI provider adapters
+tests/            Offline Vitest coverage
+public/           Browser branding assets and web manifest
+dist/             Production browser bundle after `npm run build:client`
+dist-server/      Compiled Node server after `npm run build:server`
+Dockerfile        Reproducible single-container build
+DEPLOYMENT.md     Deployment runbooks and platform checklist
+```
+
+The production server serves `dist/` when that directory is present, so the
+Docker image can serve the browser and the API from one origin. A separate
+static client is also supported; see [Deployment](#deployment).
+
+## Configuration
+
+The supported environment variables are documented in `.env.example`.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `PORT` | HTTP and Socket.IO server port | `3001` |
+| `VITE_SOCKET_URL` | Build-time client URL for a separately hosted API | page hostname + `:3001` |
+| `ALLOWED_ORIGINS` | Comma-separated browser origins for split deployments | local/private origins only |
+| `AI_PROVIDER_CHAIN` | Ordered server-side AI provider fallback chain | configured providers |
+| `AI_REQUEST_TIMEOUT_MS` | Per-request AI timeout | `30000` |
+| `AI_MAX_CONCURRENCY` | Maximum concurrent provider requests | `4` |
+
+When the client and API share one origin, leave `VITE_SOCKET_URL` and
+`ALLOWED_ORIGINS` empty. When the client is hosted separately, build the client
+with the public API URL and set the API's `ALLOWED_ORIGINS` to the exact HTTPS
+origin of the client.
 
 ## Server-side AI providers
 
@@ -248,49 +320,79 @@ network access. It uses real Socket.IO clients against in-memory server state.
 - Solo matches are local to the current browser session and are not persisted.
   The bot roster is deterministic for a given match seed, while each new setup
   starts a fresh seed.
-- The compiled server exposes `/health` and Socket.IO. The browser bundle in
-  `dist/` is a separate static artifact and must be served by Vite or a static
-  web server; configure the build-time `VITE_SOCKET_URL` when the API is not
-  reachable at the page host on port `3001`.
+- The compiled server exposes `/health`, `/api/ai/status`, the AI decision
+  route, Socket.IO, and the browser bundle when `dist/` is present. A split
+  static-client deployment is also supported with `VITE_SOCKET_URL` and
+  `ALLOWED_ORIGINS`.
+- Rooms, Socket.IO sessions, and AI cooldown state are process-local. Run one
+  application replica unless you add shared state and Socket.IO scaling.
 - Server CORS intentionally allows localhost and private-network HTTP(S)
-  origins for local/LAN play; production deployments should put the API and
-  static client behind an appropriate access policy.
+  origins for local/LAN play. Public split deployments must set
+  `ALLOWED_ORIGINS` to the exact client origin and should terminate HTTPS at a
+  trusted reverse proxy.
 - This repository has automated protocol and Socket.IO coverage, but manual
   visual checks still depend on having two browser sessions available.
 
-## Production build and run
+## Deployment
 
-Build both browser and server artifacts:
+The complete deployment runbook is in [`DEPLOYMENT.md`](DEPLOYMENT.md). The
+recommended first deployment is a single Docker container: it serves the
+compiled browser bundle, Express API, and Socket.IO endpoint from one origin.
+
+### Build and run locally like production
 
 ```bash
 npm run build
-```
-
-The browser output is written to `dist/` and the server output to
-`dist-server/`. Start the compiled server with:
-
-```bash
 npm start
 ```
 
-The server listens on `PORT` or defaults to `3001`. Serve `dist/` separately
-with a static web server, or use the development Vite server for a local demo.
-The client bundle uses `VITE_SOCKET_URL` at build time when it is provided;
-otherwise it connects to the page hostname on port `3001`.
+Open <http://localhost:3001>. The compiled server listens on `PORT` or defaults
+to `3001`, serves `dist/` when available, and exposes:
 
-### Container deployment
+- `GET /health` — process health check.
+- `GET /api/ai/status` — configured provider ids without credentials.
+- Socket.IO — multiplayer lobby and game transport.
+- `/` and `/assets/*` — compiled browser application.
 
-The repository includes a multi-stage `Dockerfile` based on
-`node:22.17.1-bookworm-slim`. It installs dependencies from
-`package-lock.json`, builds `dist/` and `dist-server/`, then runs the compiled
-server with production dependencies:
+### Single-container deployment
 
 ```bash
-docker build -t masked .
-docker run --rm -p 3001:3001 masked
+docker build -t masked:latest .
+docker run --rm --name masked \
+  --env-file .env \
+  -p 3001:3001 \
+  masked:latest
 ```
 
-The container provides the compiled API and Socket.IO server on port `3001`.
-Serve the matching `dist/` artifact from the web layer and set
-`VITE_SOCKET_URL` before the client build if the API is not at the default
-address.
+Then open <http://localhost:3001>. Do not copy `.env` into the image. Production
+platforms should provide the same variables through their secret/environment
+configuration instead of using a committed file.
+
+### Split static client and API deployment
+
+Use this only when the browser bundle and Node server must run on different
+origins. Build the client with the public API URL:
+
+```bash
+VITE_SOCKET_URL=https://api.example.com npm run build:client
+```
+
+PowerShell equivalent:
+
+```powershell
+$env:VITE_SOCKET_URL = "https://api.example.com"
+npm run build:client
+```
+
+Deploy `dist/` to a static host, run the compiled server with `npm run build`
+and `npm start` or Docker, and set this API environment variable:
+
+```dotenv
+ALLOWED_ORIGINS=https://app.example.com
+```
+
+The reverse proxy must forward HTTP API requests and Socket.IO WebSocket
+upgrades to the Node server. Use HTTPS for both origins in production.
+
+For provider-specific examples, health checks, secret handling, rollback
+guidance, and a preflight checklist, see [`DEPLOYMENT.md`](DEPLOYMENT.md).
