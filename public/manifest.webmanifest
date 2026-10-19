@@ -1,0 +1,17 @@
+{
+  "name": "MASKED",
+  "short_name": "MASKED",
+  "description": "A social deduction game of clues, masks, and hidden roles.",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#15152b",
+  "background_color": "#0e0a29",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "any",
+      "purpose": "any maskable"
+    }
+  ]
+}

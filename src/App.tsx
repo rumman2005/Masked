@@ -3265,7 +3265,7 @@ function App() {
         <header className="topbar">
           <div className="brand-lockup">
             <span className="brand-mark" aria-hidden="true">
-              M
+              <img src="/icon.png" alt="" />
             </span>
             <div>
               <p className="brand-name">MASKED</p>

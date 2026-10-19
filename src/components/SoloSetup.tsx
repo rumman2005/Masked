@@ -62,7 +62,7 @@ export function SoloSetup({
   return (
     <section className="solo-setup-panel" aria-labelledby="solo-setup-title">
       <div className="solo-setup-heading">
-        <div>
+        <div className="solo-setup-heading-copy">
           <p className="section-kicker">Local table · no room code</p>
           <h2 id="solo-setup-title">Set up your Solo Showdown</h2>
           <p>
@@ -96,9 +96,12 @@ export function SoloSetup({
               minLength={NICKNAME_MIN_LENGTH}
               maxLength={NICKNAME_MAX_LENGTH}
               autoComplete="nickname"
+              aria-describedby="solo-nickname-hint"
               required
             />
-            <p className="field-hint">Shown beside your local avatar.</p>
+            <p id="solo-nickname-hint" className="field-hint">
+              Shown beside your local avatar.
+            </p>
           </div>
 
           <div className="solo-setup-field">
@@ -110,6 +113,7 @@ export function SoloSetup({
               className="text-input solo-select"
               value={botCount}
               onChange={(event) => onBotCountChange(Number(event.target.value))}
+              aria-describedby="solo-bot-count-hint"
             >
               {[2, 3, 4, 5, 6].map((count) => (
                 <option value={count} key={count}>
@@ -117,7 +121,9 @@ export function SoloSetup({
                 </option>
               ))}
             </select>
-            <p className="field-hint">Every match has at least three players.</p>
+            <p id="solo-bot-count-hint" className="field-hint">
+              Every match has at least three players.
+            </p>
           </div>
         </div>
 

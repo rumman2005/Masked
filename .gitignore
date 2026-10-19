@@ -5,6 +5,7 @@ coverage/
 .vite/
 *.log
 logs/
+.opencode/
 
 .env
 .env.*
