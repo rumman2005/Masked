@@ -232,4 +232,131 @@ describe("RoomManager", () => {
     vi.advanceTimersByTime(101);
     expect(manager.getRoomState(host.roomCode)?.players).toHaveLength(1);
   });
+
+  it("records one leaderboard result per match and preserves it across rematches and lobby resets", () => {
+    const manager = new RoomManager();
+    const host = expectSession(manager.createRoom("Host", "socket-host"));
+    const playerTwo = expectSession(
+      manager.joinRoom(host.roomCode, "Player2", "socket-2"),
+    );
+    const playerThree = expectSession(
+      manager.joinRoom(host.roomCode, "Player3", "socket-3"),
+    );
+
+    for (const socketId of ["socket-host", "socket-2", "socket-3"]) {
+      expect(manager.setReady(socketId, true)).toMatchObject({ ok: true });
+    }
+    expect(manager.startGame("socket-host")).toMatchObject({ ok: true });
+
+    const citizenWinRoles = [
+      { id: host.playerId, nickname: "Host", role: "CITIZEN" },
+      { id: playerTwo.playerId, nickname: "Player2", role: "MIMIC" },
+      { id: playerThree.playerId, nickname: "Player3", role: "CITIZEN" },
+    ] as const;
+    const first = manager.recordCompletedMatch(host.roomCode, {
+      phase: "MATCH_RESULTS",
+      matchWinner: "CITIZENS",
+      finalRoundRoles: citizenWinRoles,
+    });
+    expect(first).toMatchObject({
+      ok: true,
+      data: {
+        leaderboard: [
+          { playerId: host.playerId, nickname: "Host", wins: 1 },
+          { playerId: playerTwo.playerId, nickname: "Player2", wins: 0 },
+          { playerId: playerThree.playerId, nickname: "Player3", wins: 1 },
+        ],
+      },
+    });
+
+    const duplicate = manager.recordCompletedMatch(host.roomCode, {
+      phase: "MATCH_RESULTS",
+      matchWinner: "CITIZENS",
+      finalRoundRoles: citizenWinRoles,
+    });
+    expect(duplicate).toMatchObject({
+      ok: true,
+      data: {
+        leaderboard: [
+          { playerId: host.playerId, wins: 1 },
+          { playerId: playerTwo.playerId, wins: 0 },
+          { playerId: playerThree.playerId, wins: 1 },
+        ],
+      },
+    });
+
+    expect(manager.markRematchStarted(host.roomCode)).toBe(true);
+    const mimicWinRoles = [
+      { id: host.playerId, nickname: "Host", role: "CITIZEN" },
+      { id: playerTwo.playerId, nickname: "Player2", role: "MIMIC" },
+      { id: playerThree.playerId, nickname: "Player3", role: "CITIZEN" },
+    ] as const;
+    expect(
+      manager.recordCompletedMatch(host.roomCode, {
+        phase: "MATCH_RESULTS",
+        matchWinner: "MIMIC",
+        finalRoundRoles: mimicWinRoles,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        leaderboard: [
+          { playerId: host.playerId, wins: 1 },
+          { playerId: playerTwo.playerId, wins: 1 },
+          { playerId: playerThree.playerId, wins: 1 },
+        ],
+      },
+    });
+
+    expect(manager.markRematchStarted(host.roomCode)).toBe(true);
+    expect(
+      manager.recordCompletedMatch(host.roomCode, {
+        phase: "MATCH_RESULTS",
+        matchWinner: "TIE",
+        finalRoundRoles: mimicWinRoles,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        leaderboard: [
+          { playerId: host.playerId, wins: 1 },
+          { playerId: playerTwo.playerId, wins: 1 },
+          { playerId: playerThree.playerId, wins: 1 },
+        ],
+      },
+    });
+
+    expect(manager.resetRoomToLobby(host.roomCode)).toMatchObject({
+      ok: true,
+      data: {
+        phase: "lobby",
+        leaderboard: [
+          { playerId: host.playerId, wins: 1 },
+          { playerId: playerTwo.playerId, wins: 1 },
+          { playerId: playerThree.playerId, wins: 1 },
+        ],
+      },
+    });
+
+    for (const socketId of ["socket-host", "socket-2", "socket-3"]) {
+      expect(manager.setReady(socketId, true)).toMatchObject({ ok: true });
+    }
+    expect(manager.startGame("socket-host")).toMatchObject({ ok: true });
+    expect(
+      manager.recordCompletedMatch(host.roomCode, {
+        phase: "MATCH_RESULTS",
+        matchWinner: "MIMIC",
+        finalRoundRoles: mimicWinRoles,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: {
+        leaderboard: [
+          { playerId: host.playerId, wins: 1 },
+          { playerId: playerTwo.playerId, wins: 2 },
+          { playerId: playerThree.playerId, wins: 1 },
+        ],
+      },
+    });
+  });
 });

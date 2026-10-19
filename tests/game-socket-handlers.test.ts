@@ -484,4 +484,160 @@ describe("Module 3 Socket.IO game integration", () => {
     );
     await nextRound;
   });
+
+  it("publishes final roles and records one room leaderboard entry at match results", async () => {
+    const registryOptions: GameEngineOptions = {
+      wordBank: ["ANCHOR"],
+      randomIndex: () => 0,
+      durations: {
+        roleRevealMs: 10,
+        clueSubmissionMs: 60_000,
+        discussionMs: 25,
+        votingMs: 60_000,
+        revoteMs: 60_000,
+        finalGuessMs: 60_000,
+        roundResultsMs: 25,
+      },
+    };
+    activeBundle = createServerBundle(
+      undefined,
+      new ConfiguredGameEngineRegistry(registryOptions),
+    );
+    const port = await startTestServer(activeBundle);
+    const setup = await setupRoom(port);
+    const mimicPlayerId = setup.sessions[0].playerId;
+    const citizenTargetId = setup.sessions[1].playerId;
+
+    const firstCluePhase = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "CLUE_SUBMISSION" && state.roundNumber === 1,
+    );
+    const firstPrivateStates = setup.sockets.map((socket) =>
+      nextMatchingEvent<PrivateGameState>(
+        socket,
+        "private_game_state",
+        (state) => state.phase === "ROLE_REVEAL" && state.roundNumber === 1,
+      ),
+    );
+    await startRoom(setup);
+    const privateStates = await Promise.all(firstPrivateStates);
+    expect(privateStates.find((state) => state.role === "MIMIC")?.playerId).toBe(
+      mimicPlayerId,
+    );
+    await firstCluePhase;
+
+    const playMimicRound = async (
+      roundNumber: number,
+      nextPhase: "ROLE_REVEAL" | "MATCH_RESULTS",
+    ): Promise<void> => {
+      const discussionPhase = nextMatchingEvent<PublicGameState>(
+        setup.sockets[0],
+        "game_state",
+        (state) => state.phase === "DISCUSSION" && state.roundNumber === roundNumber,
+      );
+      for (const [index, socket] of setup.sockets.entries()) {
+        expect(
+          await emitGameAck<PublicGameState>(socket, "submit_clue", {
+            clue: `round-${roundNumber}-clue-${index}`,
+          }),
+        ).toMatchObject({ ok: true });
+      }
+      await discussionPhase;
+
+      const votingPhase = nextMatchingEvent<PublicGameState>(
+        setup.sockets[0],
+        "game_state",
+        (state) => state.phase === "VOTING" && state.roundNumber === roundNumber,
+      );
+      await votingPhase;
+
+      const roundResults = nextMatchingEvent<PublicGameState>(
+        setup.sockets[0],
+        "game_state",
+        (state) => state.phase === "ROUND_RESULTS" && state.roundNumber === roundNumber,
+      );
+      const nextPhaseEvent = nextMatchingEvent<PublicGameState>(
+        setup.sockets[0],
+        "game_state",
+        (state) =>
+          state.phase === nextPhase &&
+          state.roundNumber ===
+            (nextPhase === "ROLE_REVEAL" ? roundNumber + 1 : roundNumber),
+      );
+      const leaderboardState =
+        nextPhase === "MATCH_RESULTS"
+          ? nextMatchingEvent<PublicRoomState>(
+              setup.sockets[0],
+              "room_state",
+              (state) => state.leaderboard !== undefined,
+            )
+          : undefined;
+
+      for (const [index, socket] of setup.sockets.entries()) {
+        const targetPlayerId = index === 1 ? mimicPlayerId : citizenTargetId;
+        expect(
+          await emitGameAck<PublicGameState>(socket, "submit_vote", {
+            targetPlayerId,
+          }),
+        ).toMatchObject({ ok: true });
+      }
+
+      await roundResults;
+      await nextPhaseEvent;
+      if (leaderboardState !== undefined) {
+        await leaderboardState;
+      }
+    };
+
+    const roundTwoRoleReveal = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "ROLE_REVEAL" && state.roundNumber === 2,
+    );
+    const roundTwoCluePhase = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "CLUE_SUBMISSION" && state.roundNumber === 2,
+    );
+    await playMimicRound(1, "ROLE_REVEAL");
+    await roundTwoRoleReveal;
+    await roundTwoCluePhase;
+
+    const matchResults = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "MATCH_RESULTS" && state.roundNumber === 2,
+    );
+    await playMimicRound(2, "MATCH_RESULTS");
+    const completed = await matchResults;
+    expect(completed.finalRoundRoles).toEqual(
+      setup.sessions.map((session, index) => ({
+        id: session.playerId,
+        nickname: index === 0 ? "Host" : `Player${index}`,
+        role: index === 0 ? "MIMIC" : "CITIZEN",
+      })),
+    );
+
+    const leaderboard = activeBundle.roomManager.getRoomState(setup.roomCode)
+      ?.leaderboard;
+    expect(leaderboard).toEqual([
+      { playerId: setup.sessions[0].playerId, nickname: "Host", wins: 1 },
+      { playerId: setup.sessions[1].playerId, nickname: "Player1", wins: 0 },
+      { playerId: setup.sessions[2].playerId, nickname: "Player2", wins: 0 },
+    ]);
+
+    const rematchRoleReveal = nextMatchingEvent<PublicGameState>(
+      setup.sockets[0],
+      "game_state",
+      (state) => state.phase === "ROLE_REVEAL" && state.roundNumber === 1,
+    );
+    expect(
+      await emitGameAck<PublicGameState>(setup.sockets[0], "rematch", {}),
+    ).toMatchObject({ ok: true, data: { phase: "ROLE_REVEAL" } });
+    await rematchRoleReveal;
+    expect(activeBundle.roomManager.getRoomState(setup.roomCode)?.leaderboard).toEqual(
+      leaderboard,
+    );
+  });
 });

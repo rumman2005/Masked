@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img">
+  <defs>
+    <linearGradient id="fox-bg" x1="12" y1="8" x2="114" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE5B5"/>
+      <stop offset="1" stop-color="#F79F73"/>
+    </linearGradient>
+    <linearGradient id="fox-fur" x1="30" y1="25" x2="98" y2="101" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF914D"/>
+      <stop offset="1" stop-color="#D94A38"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#fox-bg)"/>
+  <path d="M27 116c6-24 19-36 37-36s31 12 37 36" fill="#168C88" stroke="#193E58" stroke-width="4"/>
+  <path d="m40 82 24 21 24-21-8-11H48z" fill="#F8E3B2" stroke="#193E58" stroke-width="3"/>
+  <path d="M28 29 34 11l23 20zm72 0-6-18-23 20z" fill="url(#fox-fur)" stroke="#193E58" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m35 19 18 15-15-4zm58 0L75 34l15-4z" fill="#F9C4B2"/>
+  <path d="M31 52c0-22 14-34 33-34s33 12 33 34v15c0 20-14 32-33 32S31 87 31 67z" fill="url(#fox-fur)" stroke="#193E58" stroke-width="4"/>
+  <path d="M36 66c7-17 16-24 28-24s21 7 28 24c-6 16-15 25-28 25S42 82 36 66z" fill="#FFF0D2"/>
+  <path d="M48 58c4-4 9-5 14-2M80 58c-4-4-9-5-14-2" fill="none" stroke="#193E58" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="52" cy="62" r="4" fill="#193E58"/>
+  <circle cx="76" cy="62" r="4" fill="#193E58"/>
+  <path d="M58 73c4 3 8 3 12 0" fill="none" stroke="#193E58" stroke-width="3" stroke-linecap="round"/>
+  <path d="M59 69c3-3 7-3 10 0l-5 5z" fill="#193E58"/>
+  <path d="M42 84c13 8 27 8 44 0" fill="none" stroke="#193E58" stroke-width="4" stroke-linecap="round"/>
+  <path d="M40 85c7 7 14 11 24 13 10-2 17-6 24-13l-5 22H45z" fill="#EAD37A" stroke="#193E58" stroke-width="3"/>
+</svg>

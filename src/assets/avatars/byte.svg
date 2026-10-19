@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img">
+  <defs>
+    <linearGradient id="byte-bg" x1="13" y1="11" x2="114" y2="117" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C9F4FF"/>
+      <stop offset="1" stop-color="#7BA8F6"/>
+    </linearGradient>
+    <linearGradient id="byte-shell" x1="33" y1="28" x2="95" y2="111" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6C70E8"/>
+      <stop offset="1" stop-color="#3F3E9F"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#byte-bg)"/>
+  <path d="M25 117c5-24 19-37 39-37s34 13 39 37" fill="#30336F" stroke="#202654" stroke-width="4"/>
+  <path d="M40 80h48v28H40z" fill="#52D5D1" stroke="#202654" stroke-width="4"/>
+  <path d="M48 97h32" stroke="#202654" stroke-width="3" stroke-linecap="round"/>
+  <rect x="31" y="31" width="66" height="61" rx="21" fill="url(#byte-shell)" stroke="#202654" stroke-width="4"/>
+  <rect x="41" y="47" width="46" height="29" rx="9" fill="#B9F7E7" stroke="#202654" stroke-width="3"/>
+  <circle cx="54" cy="61" r="5" fill="#202654"/>
+  <circle cx="74" cy="61" r="5" fill="#202654"/>
+  <path d="M55 69c5 3 13 3 18 0" fill="none" stroke="#202654" stroke-width="3" stroke-linecap="round"/>
+  <path d="M24 54h9M95 54h9M24 69h9M95 69h9" stroke="#202654" stroke-width="4" stroke-linecap="round"/>
+  <path d="M64 31V18" stroke="#202654" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="64" cy="14" r="6" fill="#FFCF5C" stroke="#202654" stroke-width="3"/>
+  <path d="M49 38h7M72 38h7" stroke="#C9F4FF" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="39" cy="39" r="3" fill="#FF788A"/>
+  <circle cx="89" cy="39" r="3" fill="#FF788A"/>
+  <path d="M47 85h34" stroke="#FFCF5C" stroke-width="3" stroke-dasharray="4 5"/>
+</svg>

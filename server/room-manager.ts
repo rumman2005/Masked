@@ -1,6 +1,9 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import type { GameParticipant } from "../shared/game-protocol.js";
+import type {
+  GameParticipant,
+  PublicGameState,
+} from "../shared/game-protocol.js";
 import {
   NICKNAME_MAX_LENGTH,
   NICKNAME_MIN_LENGTH,
@@ -11,6 +14,7 @@ import {
   type AckSuccess,
   type LobbyError,
   type LeaveResult,
+  type PublicLeaderboardEntry,
   type PublicRoomState,
   type SessionPayload,
 } from "../shared/protocol.js";
@@ -33,11 +37,16 @@ interface InternalPlayer {
   removalTimer?: ReturnType<typeof setTimeout>;
 }
 
+interface InternalLeaderboardEntry extends PublicLeaderboardEntry {}
+
 interface InternalRoom {
   roomCode: string;
   hostPlayerId: string;
   phase: InternalRoomPhase;
   players: Map<string, InternalPlayer>;
+  leaderboard: Map<string, InternalLeaderboardEntry>;
+  matchGeneration: number;
+  recordedMatchGeneration?: number;
 }
 
 export type ValidationResult<T> =
@@ -238,6 +247,8 @@ export class RoomManager {
       hostPlayerId: player.id,
       phase: "lobby",
       players: new Map([[player.id, player]]),
+      leaderboard: new Map(),
+      matchGeneration: 0,
     };
 
     this.rooms.set(roomCode, room);
@@ -304,6 +315,9 @@ export class RoomManager {
       room.roomCode,
     );
     room.players.set(player.id, player);
+    if (room.leaderboard.size > 0) {
+      this.addLeaderboardPlayer(room, player);
+    }
     this.sessionsByToken.set(player.sessionToken, player);
     this.playerBySocket.set(socketId, player);
     this.ensureHost(room);
@@ -457,6 +471,8 @@ export class RoomManager {
     }
 
     room.phase = "playing";
+    room.matchGeneration += 1;
+    room.recordedMatchGeneration = undefined;
     const state = this.toPublicRoomState(room);
     return success(state, { roomCode: room.roomCode, state });
   }
@@ -658,6 +674,110 @@ export class RoomManager {
 
   public getConnectedParticipants(roomCodeValue: unknown): GameParticipant[] {
     return this.getConnectedGameParticipants(roomCodeValue);
+  }
+
+  /**
+   * Advance the room's match generation after a new engine match succeeds.
+   * The generation lets result recording distinguish two identical matches
+   * while still ignoring duplicate result events for one match. This is used
+   * both for host rematches and for starting a fresh match after returning to
+   * the lobby.
+   */
+  public markMatchStarted(roomCodeValue: unknown): boolean {
+    const roomCodeResult = normalizeRoomCode(roomCodeValue);
+    if (!roomCodeResult.ok) {
+      return false;
+    }
+
+    const room = this.rooms.get(roomCodeResult.value);
+    if (room === undefined || room.phase !== "playing") {
+      return false;
+    }
+
+    room.matchGeneration += 1;
+    room.recordedMatchGeneration = undefined;
+    return true;
+  }
+
+  /** Backwards-compatible name for callers that specifically start a rematch. */
+  public markRematchStarted(roomCodeValue: unknown): boolean {
+    return this.markMatchStarted(roomCodeValue);
+  }
+
+  /**
+   * Record one completed match in the room-local leaderboard. Calls for the
+   * same match generation are idempotent because Socket.IO may deliver the
+   * authoritative result through both an action acknowledgement and a state
+   * event.
+   */
+  public recordCompletedMatch(
+    roomCodeValue: unknown,
+    result: Pick<PublicGameState, "phase" | "matchWinner" | "finalRoundRoles">,
+  ): RoomManagerResult<PublicRoomState> {
+    const roomCodeResult = normalizeRoomCode(roomCodeValue);
+    if (!roomCodeResult.ok) {
+      return failure(roomCodeResult.error);
+    }
+
+    const room = this.rooms.get(roomCodeResult.value);
+    if (room === undefined) {
+      return failure(error("ROOM_NOT_FOUND", "That room does not exist."));
+    }
+
+    if (result.phase !== "MATCH_RESULTS" || result.matchWinner === null) {
+      return failure(
+        error(
+          "ACTION_NOT_ALLOWED",
+          "A leaderboard entry can only be recorded after match results.",
+        ),
+      );
+    }
+
+    if (room.recordedMatchGeneration === room.matchGeneration) {
+      const state = this.toPublicRoomState(room);
+      return success(state, { roomCode: room.roomCode, state });
+    }
+
+    for (const player of room.players.values()) {
+      this.addLeaderboardPlayer(room, player);
+    }
+
+    const finalRoundRoles = result.finalRoundRoles ?? [];
+    const seenRoleIds = new Set<string>();
+    for (const revealedPlayer of finalRoundRoles) {
+      if (seenRoleIds.has(revealedPlayer.id)) {
+        continue;
+      }
+      seenRoleIds.add(revealedPlayer.id);
+
+      const roomPlayer = room.players.get(revealedPlayer.id);
+      const leaderboardEntry =
+        room.leaderboard.get(revealedPlayer.id) ??
+        this.createLeaderboardEntry(
+          revealedPlayer.id,
+          roomPlayer?.nickname ?? revealedPlayer.nickname,
+        );
+      room.leaderboard.set(revealedPlayer.id, leaderboardEntry);
+
+      if (
+        (result.matchWinner === "CITIZENS" && revealedPlayer.role === "CITIZEN") ||
+        (result.matchWinner === "MIMIC" && revealedPlayer.role === "MIMIC")
+      ) {
+        leaderboardEntry.wins += 1;
+      }
+    }
+
+    room.recordedMatchGeneration = room.matchGeneration;
+    const state = this.toPublicRoomState(room);
+    return success(state, { roomCode: room.roomCode, state });
+  }
+
+  /** Alias for callers that use the completed-match terminology. */
+  public recordMatchResult(
+    roomCodeValue: unknown,
+    result: Pick<PublicGameState, "phase" | "matchWinner" | "finalRoundRoles">,
+  ): RoomManagerResult<PublicRoomState> {
+    return this.recordCompletedMatch(roomCodeValue, result);
   }
 
   public resetRoomToLobby(
@@ -865,7 +985,7 @@ export class RoomManager {
     }));
     const connectedPlayers = players.filter((player) => player.connected);
 
-    return {
+    const state: PublicRoomState = {
       roomCode: room.roomCode,
       hostPlayerId: room.hostPlayerId,
       phase: room.phase,
@@ -875,6 +995,35 @@ export class RoomManager {
       minPlayers: ROOM_MIN_PLAYERS,
       maxPlayers: ROOM_MAX_PLAYERS,
     };
+
+    if (room.leaderboard.size > 0) {
+      state.leaderboard = [...room.leaderboard.values()].map((entry) => ({
+        ...entry,
+      }));
+    }
+
+    return state;
+  }
+
+  private addLeaderboardPlayer(
+    room: InternalRoom,
+    player: Pick<InternalPlayer, "id" | "nickname">,
+  ): void {
+    if (room.leaderboard.has(player.id)) {
+      return;
+    }
+
+    room.leaderboard.set(
+      player.id,
+      this.createLeaderboardEntry(player.id, player.nickname),
+    );
+  }
+
+  private createLeaderboardEntry(
+    playerId: string,
+    nickname: string,
+  ): InternalLeaderboardEntry {
+    return { playerId, nickname, wins: 0 };
   }
 
   private notify(change: RoomStateChange): void {

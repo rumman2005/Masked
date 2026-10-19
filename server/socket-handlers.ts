@@ -412,6 +412,20 @@ export function registerSocketHandlers(
     }
 
     const cached = getCachedGameState(roomCode);
+    if (
+      state.phase === "MATCH_RESULTS" &&
+      cached.publicState?.phase !== "MATCH_RESULTS"
+    ) {
+      const leaderboardResult = roomManager.recordCompletedMatch(roomCode, state);
+      if (leaderboardResult.ok) {
+        emitRoomState(
+          io,
+          roomCode,
+          leaderboardResult.state ?? leaderboardResult.data,
+        );
+      }
+    }
+
     if (JSON.stringify(cached.publicState) === JSON.stringify(state)) {
       return;
     }
@@ -1096,9 +1110,16 @@ export function registerSocketHandlers(
       const participants = roomManager.getConnectedGameParticipants(
         context.roomCode,
       );
-      performGameAction(socket, ack, context, () =>
-        gameEngineRegistry.rematch(context.roomCode, participants),
-      );
+      performGameAction(socket, ack, context, () => {
+        const output = gameEngineRegistry.rematch(
+          context.roomCode,
+          participants,
+        );
+        if (resultError(output) === undefined) {
+          roomManager.markRematchStarted(context.roomCode);
+        }
+        return output;
+      });
     });
 
     socket.on("return_to_lobby", (payload, ack) => {

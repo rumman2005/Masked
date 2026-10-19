@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img">
+  <defs>
+    <linearGradient id="pip-bg" x1="11" y1="13" x2="116" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D9F8E9"/>
+      <stop offset="1" stop-color="#8DD9C4"/>
+    </linearGradient>
+    <linearGradient id="pip-body" x1="35" y1="48" x2="94" y2="111" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4F2B2"/>
+      <stop offset="1" stop-color="#F0B75B"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#pip-bg)"/>
+  <circle cx="25" cy="37" r="7" fill="#FFFFFF" opacity=".8"/>
+  <circle cx="103" cy="47" r="5" fill="#FFFFFF" opacity=".7"/>
+  <path d="M29 115c4-19 17-31 35-31s31 12 35 31" fill="#7553B7" stroke="#30285B" stroke-width="4"/>
+  <path d="M44 79c-7 6-12 14-13 25l15-7 6-17zm40 0c7 6 12 14 13 25l-15-7-6-17z" fill="#EBAE55" stroke="#30285B" stroke-width="4"/>
+  <path d="M35 57c0-18 11-30 29-30s29 12 29 30v22c0 16-11 27-29 27S35 95 35 79z" fill="url(#pip-body)" stroke="#30285B" stroke-width="4"/>
+  <path d="M36 53c3-17 12-27 28-27s25 10 28 27c-10-6-18-9-28-9s-18 3-28 9z" fill="#F48B62" stroke="#30285B" stroke-width="4"/>
+  <path d="M48 57h15v13H48zm17 0h15v13H65z" fill="#BDF5E4" stroke="#30285B" stroke-width="3"/>
+  <path d="M63 63h2" stroke="#30285B" stroke-width="3"/>
+  <circle cx="56" cy="63" r="3" fill="#30285B"/>
+  <circle cx="72" cy="63" r="3" fill="#30285B"/>
+  <path d="M57 81c5 4 9 4 14 0" fill="none" stroke="#30285B" stroke-width="3" stroke-linecap="round"/>
+  <path d="M64 26V15" stroke="#30285B" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="64" cy="12" r="6" fill="#F48B62" stroke="#30285B" stroke-width="3"/>
+  <path d="M44 91c5 4 12 6 20 6s15-2 20-6" fill="none" stroke="#E57B55" stroke-width="3" stroke-linecap="round"/>
+</svg>

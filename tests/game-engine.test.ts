@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  CURATED_WORD_BANK,
   DISCUSSION_DURATION_MS,
   type PublicGameState,
 } from "../shared/game-protocol.js";
@@ -90,6 +91,32 @@ afterEach(() => {
 });
 
 describe("GameEngine", () => {
+  it("provides a broad single-word curated bank and avoids the previous word", () => {
+    expect(CURATED_WORD_BANK.length).toBeGreaterThan(100);
+    expect(new Set(CURATED_WORD_BANK).size).toBe(CURATED_WORD_BANK.length);
+    expect(CURATED_WORD_BANK.every((word) => /^[A-Z]+$/.test(word))).toBe(true);
+
+    vi.useFakeTimers();
+    const engine = new GameEngine("ROOM01", participants, {
+      durations: shortDurations,
+      wordBank: ["ALPHA", "BETA"],
+      randomIndex: () => 0,
+    });
+    resultData(engine.start());
+    expect(engine.getPrivateState("b")?.secretWord).toBe("ALPHA");
+
+    vi.advanceTimersByTime(shortDurations.roleRevealMs);
+    submitAllClues(engine);
+    vi.advanceTimersByTime(shortDurations.discussionMs);
+    resultData(engine.submitVote("a", "b"));
+    resultData(engine.submitVote("b", "a"));
+    resultData(engine.submitVote("c", "b"));
+    vi.advanceTimersByTime(shortDurations.roundResultsMs);
+
+    expect(engine.getPrivateState("b")?.secretWord).toBe("BETA");
+    engine.dispose();
+  });
+
   it("assigns exactly one Mimic and isolates the shared citizen word", () => {
     vi.useFakeTimers();
     const engine = makeEngine();
@@ -106,6 +133,7 @@ describe("GameEngine", () => {
     expect(citizens[0]?.secretWord).toBe("ANCHOR");
     expect(citizens[1]?.secretWord).toBe("ANCHOR");
     expect(Object.hasOwn(mimics[0] ?? {}, "secretWord")).toBe(false);
+    expect(engine.getPublicState().finalRoundRoles).toBeUndefined();
 
     const publicJson = JSON.stringify(engine.getPublicState());
     expect(publicJson).not.toContain("ANCHOR");
@@ -388,12 +416,21 @@ describe("GameEngine", () => {
       mimicWins: 2,
       matchWinner: null,
     });
-    expect(finishRoundResults(engine)).toMatchObject({
+    const finished = finishRoundResults(engine);
+    expect(finished).toMatchObject({
       phase: "MATCH_RESULTS",
       citizenWins: 0,
       mimicWins: 2,
       matchWinner: "MIMIC",
     });
+    expect(finished.finalRoundRoles).toHaveLength(participants.length);
+    expect(finished.finalRoundRoles).toEqual(
+      participants.map((player) => ({
+        id: player.id,
+        nickname: player.nickname,
+        role: engine.getPrivateState(player.id)?.role,
+      })),
+    );
 
     engine.dispose();
   });

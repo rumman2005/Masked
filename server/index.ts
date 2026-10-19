@@ -16,6 +16,11 @@ import {
 } from "./socket-handlers.js";
 import { GameEngineRegistry } from "./game-engine.js";
 import { ChatManager } from "./chat-manager.js";
+import {
+  createAiProviderService,
+  type AiProviderService,
+} from "./ai/index.js";
+import { registerSoloAiRoutes } from "./ai/solo-decision.js";
 
 export const DEFAULT_PORT = 3001;
 
@@ -88,12 +93,14 @@ export interface ServerBundle {
   roomManager: RoomManager;
   gameEngineRegistry: GameEngineRegistry;
   chatManager: ChatManager;
+  aiProviderService: AiProviderService;
 }
 
 export function createServerBundle(
   roomManager: RoomManager = new RoomManager(),
   gameEngineRegistry: GameEngineRegistry = new GameEngineRegistry(),
   chatManager: ChatManager = new ChatManager(),
+  aiProviderService: AiProviderService = createAiProviderService(),
 ): ServerBundle {
   const app = express();
 
@@ -117,8 +124,17 @@ export function createServerBundle(
   });
 
   registerSocketHandlers(io, roomManager, gameEngineRegistry, chatManager);
+  registerSoloAiRoutes(app, aiProviderService);
 
-  return { app, httpServer, io, roomManager, gameEngineRegistry, chatManager };
+  return {
+    app,
+    httpServer,
+    io,
+    roomManager,
+    gameEngineRegistry,
+    chatManager,
+    aiProviderService,
+  };
 }
 
 export function getPort(): number {

@@ -31,6 +31,12 @@ export interface PublicPlayer {
   connected: boolean;
 }
 
+export interface PublicLeaderboardEntry {
+  playerId: string;
+  nickname: string;
+  wins: number;
+}
+
 export interface PublicRoomState {
   roomCode: string;
   hostPlayerId: string;
@@ -40,6 +46,8 @@ export interface PublicRoomState {
   readyCount: number;
   minPlayers: number;
   maxPlayers: number;
+  /** Omitted until the room has completed at least one match. */
+  leaderboard?: PublicLeaderboardEntry[];
 }
 
 export interface SessionPayload {
